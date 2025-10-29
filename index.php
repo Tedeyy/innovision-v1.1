@@ -99,7 +99,7 @@
                     </div>
                     <h3>Register as Seller</h3>
                     <p>Start selling your agricultural products directly to buyers</p>
-                    <a href="pages/authentication/seller/req.php" class="btn btn-outline">
+                    <a href="pages/authentication/seller/registrationform.php" class="btn btn-outline">
                         <i class="fas fa-arrow-right"></i>
                         Start Selling
                     </a>
@@ -110,7 +110,7 @@
                     </div>
                     <h3>Register as Buyer</h3>
                     <p>Connect with farmers and purchase fresh products</p>
-                    <a href="pages/authentication/buyer/req.php" class="btn btn-outline">
+                    <a href="pages/authentication/buyer/registrationform.php" class="btn btn-outline">
                         <i class="fas fa-arrow-right"></i>
                         Start Buying
                     </a>

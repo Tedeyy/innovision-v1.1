@@ -7,28 +7,46 @@ session_start();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Choose Admin/BAT</title>
-    <link rel="stylesheet" href="useradmin.css">
+    <link rel="stylesheet" href="style/registrationpage.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="wrap">
+      <div class="wrap">
         <div class="card">
-            <h1>Administration Access</h1>
-            <p class="sub">Choose how you want to manage InnoVision</p>
+            <h1>Create your account</h1>
+            <p class="sub" id="trigger-text">Choose how you want to use <span class="brand">InnoVision</span></p>
+
             <div class="options">
                 <form>
-                    <button class="opt admin" type="submit" formaction="admin/req.php">
-                        <span class="icon">🛡️</span>
-                        Register as Admin
+                    <button class="opt buyer" type="submit" formaction="buyer/req.php">
+                        <span class="icon">🛒</span>
+                        Register as Buyer
                     </button>
-                    <button class="opt bat" type="submit" formaction="bat/req.php">
-                        <span class="icon">🏷️</span>
-                        Register as BAT
+                    <button class="opt seller" type="submit" formaction="seller/req.php">
+                        <span class="icon">🏪</span>
+                        Register as Seller
                     </button>
                 </form>
             </div>
-            <div class="back"><a href="userregister.php">Back</a></div>
+
+            <div class="back">
+                <a href="loginpage.php">Already have an account? Sign in</a>
+            </div>
         </div>
     </div>
+    <script>
+    (function(){
+        var clicks = 0;
+        var span = document.querySelector('#trigger-text .brand');
+        if (!span) return;
+        span.addEventListener('click', function(){
+            clicks++;
+            if (clicks >= 3) {
+                window.location.href = 'management/managementregistration.php';
+            }
+            setTimeout(function(){ clicks = 0; }, 1000);
+        });
+    })();
+    </script>
 </body>
 </html>

@@ -8,7 +8,7 @@ session_start();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login to InnoVision</title>
-    <link rel="stylesheet" href="login.css">
+    <link rel="stylesheet" href="style/loginpage.css">
 </head>
 <body>
     <div class="login-container">
@@ -33,7 +33,7 @@ session_start();
             </div>
             <?php endif; ?>
             <div class="register-link">
-                <p>Don't have an account? <a href="userregister.php">Register here</a></p>
+                <p>Don't have an account? <a href="registrationpage.php">Register here</a></p>
             </div>
         </form>
     </div>

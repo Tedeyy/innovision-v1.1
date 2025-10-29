@@ -1,0 +1,19 @@
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:linear-gradient(135deg,#141e30 0%,#243b55 100%);min-height:100vh;padding:24px;color:#e2e8f0}
+.wrap{max-width:720px;margin:0 auto}
+.card{background:rgba(255,255,255,.08);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.15);border-radius:20px;box-shadow:0 20px 40px rgba(0,0,0,.35);padding:32px;margin-top:10vh}
+.card h1{font-size:2rem;font-weight:700;margin-bottom:8px}
+.card .sub{color:#cbd5e1;margin-bottom:24px}
+.options form{display:grid;grid-template-columns:1fr;gap:12px}
+.opt{display:flex;align-items:center;gap:10px;justify-content:center;padding:14px 18px;border-radius:14px;border:none;color:#fff;font-weight:700;cursor:pointer;transition:all .25s ease;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.opt .icon{font-size:1.2rem}
+.opt.admin{background:linear-gradient(135deg,#3b82f6,#2563eb)}
+.opt.bat{background:linear-gradient(135deg,#10b981,#059669)}
+.opt:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(0,0,0,.35)}
+.back{margin-top:18px}
+.back a{color:#93c5fd;text-decoration:none;font-weight:600}
+.back a:hover{text-decoration:underline}
+
+@media (min-width:640px){
+  .options form{grid-template-columns:1fr 1fr}
+}
