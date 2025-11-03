@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seller Registration Form</title>
+    <link rel="stylesheet" href="style/registrationform.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="regform">
+        <form id="seller-reg-form" action="script/registry.php" method="post" enctype="multipart/form-data">
+            <h2>Seller Registration Details</h2>
+            First Name<br>
+            <input type="text" id="firstname" name="firstname" required>
+            <br><br>
+            Middle Name<br>
+            <input type="text" id="middlename" name="middlename" required>
+            <br><br>
+            Last Name<br>
+            <input type="text" id="lastname" name="lastname" required>
+            <br><br>
+            Birthdate<br>
+            <input type="date" id="bdate" name="bdate" required>
+            <br><br>
+            Contact Number<br>
+            <input type="tel" id="contact" name="contact" inputmode="numeric" pattern="\d{11}" maxlength="11" required>
+            <br><br>
+            Email Address<br>
+            <input type="email" id="email" name="email" required>
+            <br><br>
+            RSBSA Number<br>
+            <input type="text" id="rsbsanum" name="rsbsanum" required>
+            <br><br>
+
+            <!-- New address fields -->
+            Address<br>
+            <input type="text" id="address" name="address" required>
+            <br><br>
+            Barangay<br>
+            <input type="text" id="barangay" name="barangay" required>
+            <br><br>
+            Municipality<br>
+            <input type="text" id="municipality" name="municipality" required>
+            <br><br>
+            Province<br>
+            <input type="text" id="province" name="province" required>
+            <br><br>
+            Supporting Document Type<br>
+                <select id="supdoctype" name="supdoctype" required>
+                    <option value="">Select Document Type</option>
+                    <option value="Driver's License">Driver's License</option>
+                    <option value="Passport">Passport</option>
+                    <option value="National ID">National ID</option>
+                    <option value="Student ID">Student ID</option>
+                    <option value="Other">Other</option>
+                </select>
+            <br><br>
+            Valid ID<br>
+            <input type="file" id="valid_id" name="valid_id" accept="image/*" required>
+            <div id="file_error" style="display:none; font-size:12px; color:#000;">File too large. Max size is 20MB.</div>
+            <br><br>
+            Valid ID Number<br>
+            <input type="text" id="idnum" name="idnum" required>
+            <br><br>
+            <br><br>
+            <div id="acc">Login Credentials<br>
+                Username<br>
+                <input type="text" id="username" name="username" required>
+                <br><br>
+                Password<br>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <input type="password" id="password" name="password" required>
+                    <button type="button" id="toggle-password">Show</button>
+                </div>
+                <br>
+                Confirm Password<br>
+                <input type="password" id="confirm_password" name="confirm_password" required>
+                <div id="password_error" style="color:#c00; font-size:12px; display:none;">Passwords do not match.</div>
+                <br>
+            </div>
+            <br><br>
+            <input type="hidden" id="desired_id_filename" name="desired_id_filename" value="">
+            <input type="hidden" id="confirmed" name="confirmed" value="0">
+            <button type="submit" id="proceed_btn" name="next" value="next">Proceed</button>
+            <br>
+        </form>
+    </div>
+    <div id="confirm_modal" style="position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.4);">
+        <div style="background:#fff; max-width:640px; width:90%; padding:20px; border-radius:8px; max-height:80vh; overflow:auto;">
+            <h3>Confirm Details</h3>
+            <div id="confirm_content" style="margin-top:12px; line-height:1.6;"></div>
+            <div id="image_preview_confirm" style="display:none; margin-top:12px;"></div>
+            <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:16px;">
+                <button type="button" id="edit_btn" style="background:#fff; color:#000; border:1px solid #000; padding:8px 12px;">Edit</button>
+                <button type="button" id="confirm_btn" style="background:#000; color:#fff; border:1px solid #000; padding:8px 12px;">Confirm</button>
+            </div>
+        </div>
+    </div>
+    <script src="script/registrationform.js"></script>
+</body>
+</html>
