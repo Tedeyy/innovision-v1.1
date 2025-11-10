@@ -23,7 +23,7 @@
                 <h1>BAT Dashboard</h1>
             </div>
             <div>
-                <a class="btn" href="../authentication/logout.php">Logout</a>
+                <a>Logout</a>
             </div>
         </div>
         <div class="card">
