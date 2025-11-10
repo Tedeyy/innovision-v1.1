@@ -116,9 +116,12 @@ function sb_rest($method, $path, $query = [], $body = null, $headers = []){
     $at = $_SESSION['supa_access_token'] ?? null;
     // Auto refresh if near expiry
     $exp = $_SESSION['supa_expires_at'] ?? 0; if ($exp && time()>$exp) sb_auth_refresh();
+    // Choose best Authorization: user token -> service role (if set) -> anon key
+    $service = sb_env('SUPABASE_SERVICE_ROLE_KEY') ?: '';
+    $authKey = $at ?: ($service ?: sb_anon_key());
     $hdrs = array_merge([
         'apikey: '.sb_anon_key(),
-        $at ? ('Authorization: Bearer '.$at) : ('Authorization: Bearer '.sb_anon_key()),
+        'Authorization: Bearer '.$authKey,
         'Accept: application/json',
     ], $headers);
     $ch = curl_init();

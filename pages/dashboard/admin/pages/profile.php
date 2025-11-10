@@ -19,6 +19,20 @@ $success = '';
 $error = '';
 
 if ($userId) {
+    // Determine which table holds this admin
+    $tableOrder = ['admin','reviewadmin'];
+    $tableFound = null;
+    $currentRow = null;
+    foreach ($tableOrder as $t) {
+        list($rowsTry, $stTry, $errTry) = sb_rest('GET', $t, [
+            'select' => implode(',', $columns),
+            'user_id' => 'eq.'.$userId,
+            'limit' => 1
+        ]);
+        if (!$errTry && $stTry < 400 && is_array($rowsTry) && isset($rowsTry[0])) { $tableFound = $t; $currentRow = $rowsTry[0]; break; }
+    }
+    if (!$tableFound) { $notice = 'No profile found for your account.'; }
+
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $patch = [];
         $logValues = [
@@ -38,10 +52,10 @@ if ($userId) {
                 if (array_key_exists($field, $logValues)) { $logValues[$field] = $val; }
             }
         }
-        if (!empty($patch)) {
+        if (!empty($patch) && $tableFound) {
             list($updData, $updStatus, $updErr) = sb_rest(
                 'PATCH',
-                'admins',
+                $tableFound,
                 ['user_id' => 'eq.'.$userId],
                 $patch,
                 ['Prefer: return=minimal']
@@ -73,21 +87,8 @@ if ($userId) {
         }
     }
 
-    // Fetch current data
-    list($rows, $status, $err) = sb_rest('GET', 'admins', [
-        'select' => implode(',', $columns),
-        'user_id' => 'eq.'.$userId,
-        'limit' => 1
-    ]);
-    if ($err || $status >= 400) {
-        $error = 'Fetch failed';
-    } else {
-        if (is_array($rows) && isset($rows[0])) {
-            foreach ($columns as $c) { $data[$c] = $rows[0][$c] ?? ''; }
-        } else {
-            $notice = 'No profile found for your account.';
-        }
-    }
+    // Populate data from whichever table we found
+    if ($currentRow) { foreach ($columns as $c) { $data[$c] = $currentRow[$c] ?? ''; } }
 } else {
     $notice = 'You are not logged in.';
 }

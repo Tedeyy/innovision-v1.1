@@ -16,6 +16,15 @@ $data = array_fill_keys($columns, '');
 $notice=''; $success=''; $error='';
 
 if ($userId) {
+  // Determine which table holds this BAT user
+  $tableOrder = ['bat','preapprovalbat','reviewbat'];
+  $tableFound = null; $currentRow = null;
+  foreach ($tableOrder as $t) {
+    list($rowsTry,$stTry,$errTry) = sb_rest('GET',$t,['select'=>implode(',',$columns),'user_id'=>'eq.'.$userId,'limit'=>1]);
+    if (!$errTry && $stTry < 400 && is_array($rowsTry) && isset($rowsTry[0])) { $tableFound=$t; $currentRow=$rowsTry[0]; break; }
+  }
+  if (!$tableFound) { $notice='No profile found for your account.'; }
+
   if ($_SERVER['REQUEST_METHOD']==='POST') {
     $patch=[]; $logValues=[
       'contact'=>null,'address'=>null,'barangay'=>null,'municipality'=>null,'province'=>null,
@@ -24,8 +33,8 @@ if ($userId) {
     foreach ($editable as $f) {
       if (isset($_POST[$f])) { $val=trim((string)$_POST[$f]); $patch[$f]=$val; if (array_key_exists($f,$logValues)) $logValues[$f]=$val; }
     }
-    if (!empty($patch)) {
-      list($updData,$updStatus,$updErr) = sb_rest('PATCH','bats',['user_id'=>'eq.'.$userId], $patch, ['Prefer: return=minimal']);
+    if (!empty($patch) && $tableFound) {
+      list($updData,$updStatus,$updErr) = sb_rest('PATCH',$tableFound,['user_id'=>'eq.'.$userId], $patch, ['Prefer: return=minimal']);
       if ($updErr || ($updStatus !== 204 && $updStatus !== 200)) { $error='Update failed'; }
       else {
         $logRow=[
@@ -38,10 +47,8 @@ if ($userId) {
       }
     } else { $notice='No changes submitted.'; }
   }
-  list($rows,$status,$err) = sb_rest('GET','bats',['select'=>implode(',',$columns),'user_id'=>'eq.'.$userId,'limit'=>1]);
-  if ($err || $status>=400) { $error='Fetch failed'; }
-  else if (is_array($rows) && isset($rows[0])) { foreach ($columns as $c) { $data[$c]=$rows[0][$c]??''; } }
-  else { $notice='No profile found for your account.'; }
+  // Populate from found row
+  if ($currentRow) { foreach ($columns as $c) { $data[$c]=$currentRow[$c]??''; } }
 } else { $notice='You are not logged in.'; }
 ?>
 <!DOCTYPE html>
