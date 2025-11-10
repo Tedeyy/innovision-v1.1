@@ -20,7 +20,6 @@
         <div class="top">
             <div>
                 <h1>Buyer Dashboard</h1>
-                <div class="meta">Welcome, <?php echo htmlspecialchars($_SESSION['name'] ?? $_SESSION['username']); ?> (<?php echo htmlspecialchars($_SESSION['role']); ?>)</div>
             </div>
             <div>
                 <a class="btn" href="../authentication/logout.php">Logout</a>

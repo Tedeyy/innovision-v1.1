@@ -1,3 +1,8 @@
+<?php
+// Map error and cooldown from query to variables used in the template
+$error = isset($_GET['error']) ? (string)$_GET['error'] : '';
+$cooldown = isset($_GET['cooldown']) ? max(0, (int)$_GET['cooldown']) : 0;
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13,6 +18,11 @@
             <?php if (isset($_GET['submitted']) && $_GET['submitted'] === '1'): ?>
             <div class="register-link" style="color:#16a34a; font-weight:600; margin:8px 0;">
                 Registration submitted. Please check your email to confirm your account.
+            </div>
+            <?php endif; ?>
+            <?php if ($cooldown > 0): ?>
+            <div class="register-link" style="color:#e53e3e; font-weight:600; margin:8px 0;">
+                Too many failed attempts. Please wait <span id="cooldown-secs"><?php echo (int)$cooldown; ?></span> seconds.
             </div>
             <?php endif; ?>
             <?php if (isset($_GET['confirmed']) && $_GET['confirmed'] === '1'): ?>
@@ -31,7 +41,7 @@
                 <input type="password" id="password" name="password" required>
             </div>
             
-            <button type="submit" name="login" value="login">Login</button>
+            <button type="submit" id="login-btn" name="login" value="login">Login</button>
             
             <?php if (!empty($error)): ?>
             <div class="register-link" style="color:#e53e3e; font-weight:600;">
@@ -43,5 +53,24 @@
             </div>
         </form>
     </div>
+    <script>
+    (function(){
+      var btn = document.getElementById('login-btn');
+      var cd = <?php echo (int)$cooldown; ?>;
+      if (btn && cd > 0){
+        btn.disabled = true;
+        var span = document.getElementById('cooldown-secs');
+        var left = cd;
+        var timer = setInterval(function(){
+          left -= 1;
+          if (span) span.textContent = Math.max(0,left);
+          if (left <= 0){
+            clearInterval(timer);
+            btn.disabled = false;
+          }
+        }, 1000);
+      }
+    })();
+    </script>
 </body>
 </html>
