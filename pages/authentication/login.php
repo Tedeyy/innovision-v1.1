@@ -1,0 +1,143 @@
+<?php
+session_start();
+
+function loadEnvValue($key){
+    $dir = __DIR__;
+    for ($i=0; $i<6; $i++) {
+        $candidate = $dir.DIRECTORY_SEPARATOR.'.env';
+        if (is_file($candidate)) {
+            $lines = @file($candidate, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if ($lines) {
+                foreach ($lines as $line) {
+                    if (strpos(ltrim($line), '#') === 0) continue;
+                    $pos = strpos($line, '=');
+                    if ($pos === false) continue;
+                    $k = trim(substr($line, 0, $pos));
+                    if ($k === $key) {
+                        $v = trim(substr($line, $pos+1));
+                        $v = trim($v, "\"' ");
+                        return $v;
+                    }
+                }
+            }
+        }
+        $parent = dirname($dir);
+        if ($parent === $dir) break;
+        $dir = $parent;
+    }
+    return null;
+}
+
+function redirect_with_error($msg){
+    $loc = 'loginpage.php?error='.urlencode($msg);
+    header('Location: '.$loc);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    redirect_with_error('Invalid request');
+}
+
+$username = isset($_POST['username']) ? trim($_POST['username']) : '';
+$password = isset($_POST['password']) ? (string)$_POST['password'] : '';
+if ($username === '' || $password === ''){
+    redirect_with_error('Missing username or password');
+}
+
+$SUPABASE_URL = getenv('SUPABASE_URL') ?: loadEnvValue('SUPABASE_URL');
+$SUPABASE_KEY = getenv('SUPABASE_SERVICE_ROLE_KEY') ?: loadEnvValue('SUPABASE_SERVICE_ROLE_KEY') ?: getenv('SUPABASE_KEY') ?: loadEnvValue('SUPABASE_KEY');
+if (!$SUPABASE_URL || !$SUPABASE_KEY){
+    redirect_with_error('Server configuration error');
+}
+
+function fetch_user_by_username($table, $username, $baseUrl, $apiKey){
+    $url = rtrim($baseUrl,'/').'/rest/v1/'.rawurlencode($table).'?select=*&username=eq.'.rawurlencode($username).'&limit=1';
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            'apikey: '.$apiKey,
+            'Authorization: Bearer '.$apiKey,
+            'Accept: application/json',
+        ],
+    ]);
+    $res = curl_exec($ch);
+    $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($err || $http >= 400) {
+        return null;
+    }
+    $data = json_decode($res, true);
+    if (is_array($data) && isset($data[0])) return $data[0];
+    return null;
+}
+
+// Priority: prefer approved tables over review/preapproval when both exist
+$groups = [
+    'superadmin' => ['superadmin'],
+    'buyer'      => ['buyer','reviewbuyer'],
+    'seller'     => ['seller','reviewseller'],
+    'admin'      => ['admin','reviewadmin'],
+    'bat'        => ['bat','preapprovalbat','reviewbat'],
+];
+
+$found = null;
+$role = null;
+$table_found = null;
+foreach ($groups as $roleKey => $tables){
+    foreach ($tables as $t){
+        $row = fetch_user_by_username($t, $username, $SUPABASE_URL, $SUPABASE_KEY);
+        if ($row){
+            $found = $row;
+            $role = $roleKey;
+            $table_found = $t;
+            break 2;
+        }
+    }
+}
+
+if (!$found){
+    redirect_with_error('Invalid username or password');
+}
+
+$stored = isset($found['password']) ? (string)$found['password'] : '';
+if ($stored === '' || !password_verify($password, $stored)){
+    redirect_with_error('Invalid username or password');
+}
+
+// Set session
+$_SESSION['username'] = $found['username'] ?? $username;
+$_SESSION['role'] = $role;
+// Build a display name if available
+if (isset($found['user_fname']) || isset($found['user_lname'])){
+    $fname = isset($found['user_fname']) ? $found['user_fname'] : '';
+    $lname = isset($found['user_lname']) ? $found['user_lname'] : '';
+    $name = trim($fname.' '.$lname);
+    if ($name !== '') $_SESSION['name'] = $name;
+}
+if (!isset($_SESSION['name']) && isset($found['email'])){
+    $_SESSION['name'] = $found['email'];
+}
+
+// Redirect per role/table
+$dest = null;
+if ($role === 'buyer') {
+    $dest = '../dashboard/buyer/dashboard.php';
+} elseif ($role === 'seller') {
+    $dest = '../dashboard/seller/dashboard.php';
+} elseif ($role === 'admin') {
+    $dest = '../dashboard/admin/dashboard.php';
+} elseif ($role === 'bat') {
+    $dest = '../dashboard/bat/dashboard.php';
+} elseif ($role === 'superadmin') {
+    $dest = '../dashboard/superadmin/dashboard.php';
+}
+
+if (!$dest){
+    redirect_with_error('Unable to route login');
+}
+
+header('Location: '.$dest);
+exit;
