@@ -1,6 +1,10 @@
 <?php
 session_start();
 
+// Attempt Supabase logout (revokes refresh token) if configured
+require_once __DIR__ . '/../authentication/lib/supabase_client.php';
+if (function_exists('sb_auth_logout')) { @sb_auth_logout(); }
+
 // Clear all session variables
 $_SESSION = [];
 
@@ -14,8 +18,9 @@ if (ini_get('session.use_cookies')) {
 }
 
 // Destroy the session
-session_destroy();
+@session_destroy();
 
 // Redirect to site home
 header('Location: ../../index.html');
 exit;
+?>

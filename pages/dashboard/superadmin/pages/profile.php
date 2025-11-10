@@ -1,19 +1,11 @@
 <?php
 session_start();
 
+require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
+
 $firstname = isset($_SESSION['firstname']) && $_SESSION['firstname'] !== '' ? $_SESSION['firstname'] : 'User';
 $userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
 $userrole = 'Superadmin';
-
-$dsn = getenv('DB_DSN') ?: '';
-$dbUser = getenv('DB_USER') ?: '';
-$dbPass = getenv('DB_PASS') ?: '';
-
-$pdo = null;
-if ($dsn) {
-    try { $pdo = new PDO($dsn, $dbUser, $dbPass, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]); }
-    catch (Throwable $e) { $pdo = null; $error = 'Database connection failed: '.$e->getMessage(); }
-}
 
 $columns = [
   'user_fname','user_mname','user_lname','bdate','contact','address','email','office','role'
@@ -21,37 +13,36 @@ $columns = [
 $editable = ['contact','address','office','role'];
 
 $data = array_fill_keys($columns, '');
-$notice=''; $success=''; $error = isset($error)?$error:'';
+$notice=''; $success=''; $error='';
 
-if ($pdo && $userId) {
+if ($userId) {
   if ($_SERVER['REQUEST_METHOD']==='POST') {
-    $updates=[]; $params=[':user_id'=>$userId];
-    $logValues=[
+    $patch=[]; $logValues=[
       'contact'=>null,'address'=>null,'barangay'=>null,'municipality'=>null,'province'=>null,
       'office'=>null,'role'=>null,'assigned_barangay'=>null,
     ];
     foreach ($editable as $f) {
-      if (isset($_POST[$f])) { $val=trim((string)$_POST[$f]); $updates[]="$f = :$f"; $params[":$f"]=$val; if (array_key_exists($f,$logValues)) $logValues[$f]=$val; }
+      if (isset($_POST[$f])) { $val=trim((string)$_POST[$f]); $patch[$f]=$val; if (array_key_exists($f,$logValues)) $logValues[$f]=$val; }
     }
-    if ($updates) {
-      try {
-        $pdo->beginTransaction();
-        $pdo->prepare('UPDATE superadmins SET '.implode(',', $updates).' WHERE user_id = :user_id')->execute($params);
-        $pdo->prepare('INSERT INTO profileedit_log (user_id,userrole,contact,address,barangay,municipality,province,office,role,assigned_barangay) VALUES (:user_id,:userrole,:contact,:address,:barangay,:municipality,:province,:office,:role,:assigned_barangay)')
-            ->execute([
-              ':user_id'=>$userId, ':userrole'=>$userrole,
-              ':contact'=>$logValues['contact'], ':address'=>$logValues['address'], ':barangay'=>$logValues['barangay'], ':municipality'=>$logValues['municipality'], ':province'=>$logValues['province'], ':office'=>$logValues['office'], ':role'=>$logValues['role'], ':assigned_barangay'=>$logValues['assigned_barangay']
-            ]);
-        $pdo->commit(); $success='Profile updated successfully.';
-      } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); $error='Update failed: '.$e->getMessage(); }
+    if (!empty($patch)) {
+      list($updData,$updStatus,$updErr) = sb_rest('PATCH','superadmins',['user_id'=>'eq.'.$userId], $patch, ['Prefer: return=minimal']);
+      if ($updErr || ($updStatus !== 204 && $updStatus !== 200)) { $error='Update failed'; }
+      else {
+        $logRow=[
+          'user_id'=>$userId,'userrole'=>$userrole,
+          'contact'=>$logValues['contact'],'address'=>$logValues['address'],'barangay'=>$logValues['barangay'],'municipality'=>$logValues['municipality'],'province'=>$logValues['province'],
+          'office'=>$logValues['office'],'role'=>$logValues['role'],'assigned_barangay'=>$logValues['assigned_barangay']
+        ];
+        sb_rest('POST','profileedit_log',[],[$logRow],['Prefer: return=minimal']);
+        $success='Profile updated successfully.';
+      }
     } else { $notice='No changes submitted.'; }
   }
-  try {
-    $stmt=$pdo->prepare('SELECT '.implode(',', $columns).' FROM superadmins WHERE user_id = :user_id');
-    $stmt->execute([':user_id'=>$userId]); $row=$stmt->fetch();
-    if ($row) { foreach ($columns as $c) { $data[$c]=$row[$c]??''; } } else { $notice='No profile found for your account.'; }
-  } catch (Throwable $e) { $error='Fetch failed: '.$e->getMessage(); }
-} else { if (!$userId) { $notice='You are not logged in.'; } if (!$pdo && !$error) { $notice='Database not configured. Set DB_DSN, DB_USER, DB_PASS.'; } }
+  list($rows,$status,$err) = sb_rest('GET','superadmins',['select'=>implode(',',$columns),'user_id'=>'eq.'.$userId,'limit'=>1]);
+  if ($err || $status>=400) { $error='Fetch failed'; }
+  else if (is_array($rows) && isset($rows[0])) { foreach ($columns as $c) { $data[$c]=$rows[0][$c]??''; } }
+  else { $notice='No profile found for your account.'; }
+} else { $notice='You are not logged in.'; }
 ?>
 <!DOCTYPE html>
 <html lang="en"><head>

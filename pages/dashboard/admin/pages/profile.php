@@ -1,32 +1,11 @@
 <?php
 session_start();
 
-// Assumptions:
-// - Session contains user_id and firstname
-// - Admin table name: admins, primary key: user_id
-// - Connection via PDO using environment variables DB_DSN, DB_USER, DB_PASS
-//   Example DSN: mysql:host=127.0.0.1;dbname=innovision;charset=utf8mb4
+require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
 
 $firstname = isset($_SESSION['firstname']) && $_SESSION['firstname'] !== '' ? $_SESSION['firstname'] : 'User';
 $userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
 $userrole = 'Admin';
-
-$dsn = getenv('DB_DSN') ?: '';
-$dbUser = getenv('DB_USER') ?: '';
-$dbPass = getenv('DB_PASS') ?: '';
-
-$pdo = null;
-if ($dsn) {
-    try {
-        $pdo = new PDO($dsn, $dbUser, $dbPass, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        ]);
-    } catch (Throwable $e) {
-        $pdo = null;
-        $error = 'Database connection failed: ' . $e->getMessage();
-    }
-}
 
 // Columns for Admin
 $columns = [
@@ -37,12 +16,11 @@ $editable = ['contact', 'address', 'office', 'role'];
 $data = array_fill_keys($columns, '');
 $notice = '';
 $success = '';
-$error = isset($error) ? $error : '';
+$error = '';
 
-if ($pdo && $userId) {
+if ($userId) {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $updates = [];
-        $params = [':user_id' => $userId];
+        $patch = [];
         $logValues = [
             'contact' => null,
             'address' => null,
@@ -56,42 +34,39 @@ if ($pdo && $userId) {
         foreach ($editable as $field) {
             if (isset($_POST[$field])) {
                 $val = trim((string)$_POST[$field]);
-                $updates[] = "$field = :$field";
-                $params[":$field"] = $val;
-                if (array_key_exists($field, $logValues)) {
-                    $logValues[$field] = $val;
-                }
+                $patch[$field] = $val;
+                if (array_key_exists($field, $logValues)) { $logValues[$field] = $val; }
             }
         }
-        if ($updates) {
-            try {
-                $pdo->beginTransaction();
-                $sql = 'UPDATE admins SET ' . implode(', ', $updates) . ' WHERE user_id = :user_id';
-                $stmt = $pdo->prepare($sql);
-                $stmt->execute($params);
-
+        if (!empty($patch)) {
+            list($updData, $updStatus, $updErr) = sb_rest(
+                'PATCH',
+                'admins',
+                ['user_id' => 'eq.'.$userId],
+                $patch,
+                ['Prefer: return=minimal']
+            );
+            if ($updErr || ($updStatus !== 204 && $updStatus !== 200)) {
+                $error = 'Update failed';
+            } else {
                 // Log edit
-                $logSql = 'INSERT INTO profileedit_log (user_id, userrole, contact, address, barangay, municipality, province, office, role, assigned_barangay)'
-                       . ' VALUES (:user_id, :userrole, :contact, :address, :barangay, :municipality, :province, :office, :role, :assigned_barangay)';
-                $logStmt = $pdo->prepare($logSql);
-                $logStmt->execute([
-                    ':user_id' => $userId,
-                    ':userrole' => $userrole,
-                    ':contact' => $logValues['contact'],
-                    ':address' => $logValues['address'],
-                    ':barangay' => $logValues['barangay'],
-                    ':municipality' => $logValues['municipality'],
-                    ':province' => $logValues['province'],
-                    ':office' => $logValues['office'],
-                    ':role' => $logValues['role'],
-                    ':assigned_barangay' => $logValues['assigned_barangay'],
-                ]);
-
-                $pdo->commit();
+                $logRow = [
+                    'user_id' => $userId,
+                    'userrole' => $userrole,
+                    'contact' => $logValues['contact'],
+                    'address' => $logValues['address'],
+                    'barangay' => $logValues['barangay'],
+                    'municipality' => $logValues['municipality'],
+                    'province' => $logValues['province'],
+                    'office' => $logValues['office'],
+                    'role' => $logValues['role'],
+                    'assigned_barangay' => $logValues['assigned_barangay'],
+                ];
+                list($logRes, $logStatus, $logErr) = sb_rest('POST', 'profileedit_log', [], [$logRow], ['Prefer: return=minimal']);
+                if ($logErr || ($logStatus !== 201 && $logStatus !== 200 && $logStatus !== 204)) {
+                    // non-fatal
+                }
                 $success = 'Profile updated successfully.';
-            } catch (Throwable $e) {
-                if ($pdo->inTransaction()) $pdo->rollBack();
-                $error = 'Update failed: ' . $e->getMessage();
             }
         } else {
             $notice = 'No changes submitted.';
@@ -99,21 +74,22 @@ if ($pdo && $userId) {
     }
 
     // Fetch current data
-    try {
-        $stmt = $pdo->prepare('SELECT ' . implode(',', $columns) . ' FROM admins WHERE user_id = :user_id');
-        $stmt->execute([':user_id' => $userId]);
-        $row = $stmt->fetch();
-        if ($row) {
-            foreach ($columns as $c) { $data[$c] = $row[$c] ?? ''; }
+    list($rows, $status, $err) = sb_rest('GET', 'admins', [
+        'select' => implode(',', $columns),
+        'user_id' => 'eq.'.$userId,
+        'limit' => 1
+    ]);
+    if ($err || $status >= 400) {
+        $error = 'Fetch failed';
+    } else {
+        if (is_array($rows) && isset($rows[0])) {
+            foreach ($columns as $c) { $data[$c] = $rows[0][$c] ?? ''; }
         } else {
             $notice = 'No profile found for your account.';
         }
-    } catch (Throwable $e) {
-        $error = 'Fetch failed: ' . $e->getMessage();
     }
 } else {
-    if (!$userId) { $notice = 'You are not logged in.'; }
-    if (!$pdo && !$error) { $notice = 'Database not configured. Set DB_DSN, DB_USER, DB_PASS.'; }
+    $notice = 'You are not logged in.';
 }
 ?>
 <!DOCTYPE html>

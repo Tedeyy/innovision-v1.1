@@ -1,6 +1,9 @@
 <?php
 session_start();
 
+// Supabase auth helper (stores JWTs in $_SESSION for server-to-Supabase requests)
+require_once __DIR__ . '/lib/supabase_client.php';
+
 function loadEnvValue($key){
     $dir = __DIR__;
     for ($i=0; $i<6; $i++) {
@@ -201,15 +204,22 @@ if ($stored === '' || !password_verify($password, $stored)){
 // Set session
 $_SESSION['username'] = $found['username'] ?? $username;
 $_SESSION['role'] = $role;
+// Common identity fields used by dashboards
+$uid = isset($found['user_id']) ? (int)$found['user_id'] : null;
+if ($uid !== null) { $_SESSION['user_id'] = $uid; }
 // Build a display name if available
 if (isset($found['user_fname']) || isset($found['user_lname'])){
     $fname = isset($found['user_fname']) ? $found['user_fname'] : '';
     $lname = isset($found['user_lname']) ? $found['user_lname'] : '';
     $name = trim($fname.' '.$lname);
-    if ($name !== '') $_SESSION['name'] = $name;
+    if ($name !== '') {
+        $_SESSION['name'] = $name;
+        $_SESSION['firstname'] = $fname !== '' ? $fname : ($name ?: 'User');
+    }
 }
 if (!isset($_SESSION['name']) && isset($found['email'])){
     $_SESSION['name'] = $found['email'];
+    $_SESSION['firstname'] = $found['user_fname'] ?? 'User';
 }
 
 // Successful login: reset fail counter and log
@@ -221,6 +231,18 @@ if ($userId !== null){
 
 // Also store the source table name for use after login
 $_SESSION['source_table'] = $table_found;
+
+// Strengthen session fixation protection
+if (function_exists('session_regenerate_id')) { @session_regenerate_id(true); }
+
+// Sign into Supabase Auth to obtain access/refresh tokens and store in $_SESSION
+// This enables the server to act as a middleman using the user's JWT for REST calls with RLS.
+if (function_exists('sb_has_auth_config') && sb_has_auth_config()){
+    // Prefer email if present; otherwise username (if your auth uses email-as-username)
+    $emailForAuth = $found['email'] ?? $username;
+    [$authData, $authErr] = sb_auth_sign_in($emailForAuth, $password);
+    // Non-fatal if Supabase Auth is not configured or fails; system still works with current flow
+}
 
 // Redirect per role/table
 $dest = null;
