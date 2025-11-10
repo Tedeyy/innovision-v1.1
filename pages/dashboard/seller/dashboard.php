@@ -1,3 +1,7 @@
+<?php
+session_start();
+$firstname = isset($_SESSION['firstname']) && $_SESSION['firstname'] !== '' ? $_SESSION['firstname'] : 'User';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,13 +12,25 @@
     <link rel="stylesheet" href="style/dashboard.css">
     </head>
 <body>
+    <nav class="navbar">
+        <div class="nav-left">
+            <div class="brand">Dashboard</div>
+            <form class="search" method="get" action="#">
+                <input type="search" name="q" placeholder="Search" />
+            </form>
+        </div>
+        <div class="nav-right">
+            <div class="greeting">hello <?php echo htmlspecialchars($firstname, ENT_QUOTES, 'UTF-8'); ?></div>
+            <a class="btn" href="../logout.php">Logout</a>
+            <a class="profile" href="pages/profile.php" aria-label="Profile">
+                <span class="avatar">👤</span>
+            </a>
+        </div>
+    </nav>
     <div class="wrap">
         <div class="top">
             <div>
                 <h1>Seller Dashboard</h1>
-            </div>
-            <div>
-                <a>Logout</a>
             </div>
         </div>
         <div class="card">
