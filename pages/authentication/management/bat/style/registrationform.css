@@ -1,0 +1,302 @@
+/* Modern Buyer Registration Form Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    min-height: 100vh;
+    padding: 20px;
+    color: #2d3748;
+}
+
+.regform {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    padding: 3rem;
+    border-radius: 20px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+    max-width: 700px;
+    margin: 0 auto;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    animation: slideUp 0.6s ease-out;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.regform h2 {
+    color: #2d3748;
+    margin-bottom: 2rem;
+    font-size: 2.25rem;
+    font-weight: 700;
+    text-align: center;
+    background: linear-gradient(135deg, #f093fb, #f5576c);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    position: relative;
+}
+
+.regform h2::after {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 4px;
+    background: linear-gradient(135deg, #f093fb, #f5576c);
+    border-radius: 2px;
+}
+
+.regform input, .regform select {
+    width: 100%;
+    padding: 1rem 1.25rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    margin-bottom: 1rem;
+    font-family: inherit;
+}
+
+.regform input:focus, .regform select:focus {
+    outline: none;
+    border-color: #f093fb;
+    box-shadow: 0 0 0 3px rgba(240, 147, 251, 0.1);
+    background: white;
+    transform: translateY(-1px);
+}
+
+.regform input[type="file"] {
+    padding: 0.75rem;
+    background: #f7fafc;
+    border: 2px dashed #cbd5e0;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.regform input[type="file"]:hover {
+    border-color: #f093fb;
+    background: rgba(240, 147, 251, 0.05);
+}
+
+.regform input[type="file"]:focus {
+    border-color: #f093fb;
+    box-shadow: 0 0 0 3px rgba(240, 147, 251, 0.1);
+}
+
+.regform button {
+    width: 100%;
+    padding: 1.25rem 2rem;
+    background: linear-gradient(135deg, #f093fb, #f5576c);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(240, 147, 251, 0.4);
+    position: relative;
+    overflow: hidden;
+    margin-top: 1rem;
+}
+
+.regform button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(240, 147, 251, 0.6);
+}
+
+.regform button:active {
+    transform: translateY(0);
+}
+
+.regform button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s;
+}
+
+.regform button:hover::before {
+    left: 100%;
+}
+
+#acc {
+    background: linear-gradient(135deg, #f7fafc, #edf2f7);
+    padding: 2rem;
+    border-radius: 16px;
+    margin: 2rem 0;
+    border: 1px solid #e2e8f0;
+    position: relative;
+}
+
+#acc::before {
+    content: '🔐';
+    position: absolute;
+    top: -15px;
+    left: 20px;
+    background: white;
+    padding: 0 10px;
+    font-size: 1.2rem;
+}
+
+#acc h3 {
+    color: #2d3748;
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+#acc h3::before {
+    content: '👤';
+    font-size: 1.1rem;
+}
+
+/* Form Labels */
+.regform label {
+    font-weight: 600;
+    color: #4a5568;
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.95rem;
+}
+
+/* File Upload Styling */
+.regform input[type="file"]::-webkit-file-upload-button {
+    background: linear-gradient(135deg, #f093fb, #f5576c);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    margin-right: 1rem;
+    transition: all 0.3s ease;
+}
+
+.regform input[type="file"]::-webkit-file-upload-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(240, 147, 251, 0.4);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .regform {
+        padding: 2rem 1.5rem;
+        margin: 10px;
+    }
+    
+    .regform h2 {
+        font-size: 1.875rem;
+    }
+    
+    .regform input, .regform select {
+        padding: 0.875rem 1rem;
+    }
+    
+    .regform button {
+        padding: 1rem 1.5rem;
+        font-size: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: 10px;
+    }
+    
+    .regform {
+        padding: 1.5rem 1rem;
+    }
+    
+    .regform h2 {
+        font-size: 1.5rem;
+    }
+}
+
+/* Loading States */
+.regform button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.regform button:disabled:hover {
+    transform: none;
+    box-shadow: 0 4px 15px rgba(240, 147, 251, 0.4);
+}
+
+/* Focus States for Accessibility */
+.regform input:focus-visible,
+.regform select:focus-visible {
+    outline: 2px solid #f093fb;
+    outline-offset: 2px;
+}
+
+.regform button:focus-visible {
+    outline: 2px solid #f093fb;
+    outline-offset: 2px;
+}
+
+/* Success/Error Messages */
+.error-message {
+    background: linear-gradient(135deg, #fed7d7, #feb2b2);
+    color: #c53030;
+    padding: 1rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    border: 1px solid #feb2b2;
+    font-weight: 500;
+    animation: shake 0.5s ease-in-out;
+}
+
+.success-message {
+    background: linear-gradient(135deg, #c6f6d5, #9ae6b4);
+    color: #2f855a;
+    padding: 1rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    border: 1px solid #9ae6b4;
+    font-weight: 500;
+    animation: slideIn 0.5s ease-out;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

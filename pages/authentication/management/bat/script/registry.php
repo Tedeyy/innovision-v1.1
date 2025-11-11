@@ -138,16 +138,20 @@ if (!$created) {
 $createdTs = strtotime($created);
 $createdStr = $createdTs ? date('YmdHis', $createdTs) : preg_replace('/[^0-9]/','',$created);
 
-$first = strtolower(preg_replace('/[^a-z0-9]+/i','_', $_POST['firstname']));
-$last = strtolower(preg_replace('/[^a-z0-9]+/i','_', $_POST['lastname']));
+$fname = isset($_POST['firstname']) ? $_POST['firstname'] : '';
+$mname = isset($_POST['middlename']) ? $_POST['middlename'] : '';
+$lname = isset($_POST['lastname']) ? $_POST['lastname'] : '';
+$fullname = trim($fname.' '.($mname?:'').' '.$lname);
+$sanitized = strtolower(preg_replace('/[^a-z0-9]+/i','_', $fullname));
+$sanitized = trim($sanitized, '_');
 $orig = $_FILES['supporting_doc']['name'];
 $ext = '';
 $pos = strrpos($orig, '.');
 if ($pos !== false) { $ext = substr($orig, $pos); }
-$finalName = trim($first, '_').'_'.trim($last, '_').'_'.$createdStr.$ext;
+$finalName = ($sanitized !== '' ? $sanitized : 'bat').'_'.$createdStr.$ext;
 
-// Upload to bucket reviewusers under buyer folder, same filename format as seller
-$path = 'buyer/'.$finalName;
+// Upload to bucket reviewusers under bat folder
+$path = 'bat/'.$finalName;
 
 $tmp = $_FILES['supporting_doc']['tmp_name'];
 $mime = mime_content_type($tmp);
