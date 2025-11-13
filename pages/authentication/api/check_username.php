@@ -28,10 +28,10 @@ function loadEnvValue($key){
     return null;
 }
 
-$email = isset($_GET['email']) ? trim($_GET['email']) : '';
-if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)){
+$username = isset($_GET['username']) ? trim($_GET['username']) : '';
+if ($username === ''){
     http_response_code(400);
-    echo json_encode(['error' => 'Invalid email']);
+    echo json_encode(['error' => 'Invalid username']);
     exit;
 }
 
@@ -44,15 +44,16 @@ if (!$SUPABASE_URL || !$SUPABASE_KEY){
 }
 
 $tables = [
-    'admin', 'reviewadmin',
-    'bat', 'reviewbat', 'preapprovalbat',
-    'buyer', 'reviewbuyer',
-    'seller', 'reviewseller'
+    'reviewbuyer','buyer',
+    'reviewseller','seller',
+    'reviewbat','preapprovalbat',
+    'reviewadmin','admin',
+    'superadmin'
 ];
 
 $found = null;
 foreach ($tables as $t) {
-    $url = rtrim($SUPABASE_URL, '/').'/rest/v1/'.rawurlencode($t).'?select=email&email=eq.'.rawurlencode($email).'&limit=1';
+    $url = rtrim($SUPABASE_URL, '/').'/rest/v1/'.rawurlencode($t).'?select=username&username=eq.'.rawurlencode($username).'&limit=1';
     $ch = curl_init();
     curl_setopt_array($ch, [
         CURLOPT_URL => $url,

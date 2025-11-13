@@ -57,6 +57,43 @@ if (!$SUPABASE_URL || !$SUPABASE_KEY){
     respond(500, 'Supabase config missing');
 }
 
+// Uniqueness: firstname+lastname must be unique among buyers (review + final)
+$fn = trim($_POST['firstname']);
+$ln = trim($_POST['lastname']);
+$dup1 = rtrim($SUPABASE_URL,'/').'/rest/v1/reviewbuyer?select=user_id&user_fname=eq.'.rawurlencode($fn).'&user_lname=eq.'.rawurlencode($ln).'&limit=1';
+$dup2 = rtrim($SUPABASE_URL,'/').'/rest/v1/buyer?select=user_id&user_fname=eq.'.rawurlencode($fn).'&user_lname=eq.'.rawurlencode($ln).'&limit=1';
+foreach ([$dup1,$dup2] as $dupu){
+    $chD = curl_init();
+    curl_setopt($chD, CURLOPT_URL, $dupu);
+    curl_setopt($chD, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($chD, CURLOPT_HTTPHEADER, [ 'apikey: '.$SUPABASE_KEY, 'Authorization: Bearer '.$SUPABASE_KEY, 'Accept: application/json' ]);
+    $dr = curl_exec($chD);
+    $dh = curl_getinfo($chD, CURLINFO_HTTP_CODE);
+    curl_close($chD);
+    if ($dh>=200 && $dh<300) {
+        $arr = json_decode($dr, true);
+        if (is_array($arr) && count($arr)>0) { respond(409, 'A buyer with the same first and last name already exists.'); }
+    }
+}
+
+// Username uniqueness across all roles
+$uname = trim($_POST['username']);
+$unameQueries = [ 'reviewbuyer','buyer','reviewseller','seller','reviewbat','preapprovalbat','reviewadmin','admin','superadmin' ];
+foreach ($unameQueries as $tbl) {
+    $uurl = rtrim($SUPABASE_URL,'/').'/rest/v1/'.$tbl.'?select=username&username=eq.'.rawurlencode($uname).'&limit=1';
+    $chU = curl_init();
+    curl_setopt($chU, CURLOPT_URL, $uurl);
+    curl_setopt($chU, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($chU, CURLOPT_HTTPHEADER, [ 'apikey: '.$SUPABASE_KEY, 'Authorization: Bearer '.$SUPABASE_KEY, 'Accept: application/json' ]);
+    $ur = curl_exec($chU);
+    $uh = curl_getinfo($chU, CURLINFO_HTTP_CODE);
+    curl_close($chU);
+    if ($uh>=200 && $uh<300) {
+        $ua = json_decode($ur, true);
+        if (is_array($ua) && count($ua)>0) { respond(409, 'Username already taken. Please choose another.'); }
+    }
+}
+
 // Supabase Auth signup to trigger email confirmation
 $APP_URL = getenv('APP_URL') ?: loadEnvValue('APP_URL');
 $redirectTo = ($APP_URL ? rtrim($APP_URL, '/') : '') . '/pages/authentication/loginpage.php?confirmed=1';
@@ -146,14 +183,11 @@ $lname = isset($_POST['lastname']) ? $_POST['lastname'] : '';
 $fullname = trim($fname.' '.($mname?:'').' '.$lname);
 $sanitized = strtolower(preg_replace('/[^a-z0-9]+/i','_', $fullname));
 $sanitized = trim($sanitized, '_');
-$email = isset($_POST['email']) ? $_POST['email'] : '';
-$esan = strtolower(preg_replace('/[^a-z0-9]+/i','_', $email));
-$esan = trim($esan, '_');
 $orig = $_FILES['supporting_doc']['name'];
 $ext = '';
 $pos = strrpos($orig, '.');
 if ($pos !== false) { $ext = substr($orig, $pos); }
-$finalName = (($sanitized !== '') ? $sanitized : 'buyer').'_' . $esan . $ext;
+$finalName = (($sanitized !== '') ? $sanitized : 'buyer') . $ext;
 $path = 'buyer/'.$finalName;
 
 $tmp = $_FILES['supporting_doc']['tmp_name'];

@@ -83,6 +83,36 @@
       email.addEventListener('blur', check);
     }
 
+    // Username uniqueness
+    const username = form.querySelector('input[name="username"]');
+    if (username){
+      const msgU = createMsg(username);
+      const checkU = debounce(async function(){
+        const val = username.value.trim();
+        if (!val){ msgU.textContent=''; username.setCustomValidity(''); return; }
+        try {
+          const api = window.location.origin + '/pages/authentication/api/check_username.php?username=' + encodeURIComponent(val);
+          const r = await fetch(api, {headers:{'Accept':'application/json'}});
+          const j = await r.json();
+          if (j && j.exists){
+            msgU.textContent = 'Username already exists. Please choose another.';
+            msgU.style.color = '#e53e3e';
+            username.setCustomValidity('Username already exists');
+          } else {
+            msgU.textContent = 'Username is available.';
+            msgU.style.color = '#16a34a';
+            username.setCustomValidity('');
+          }
+        } catch(e){
+          msgU.textContent = 'Could not verify username right now.';
+          msgU.style.color = '#eab308';
+          username.setCustomValidity('');
+        }
+      }, 500);
+      username.addEventListener('input', checkU);
+      username.addEventListener('blur', checkU);
+    }
+
     // Password strength and confirm match
     if (password){
       const msg = createMsg(password);

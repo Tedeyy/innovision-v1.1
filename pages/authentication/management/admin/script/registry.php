@@ -57,10 +57,47 @@ if (!$SUPABASE_URL || !$SUPABASE_KEY){
     respond(500, 'Supabase config missing');
 }
 
+// Uniqueness: firstname+lastname must be unique among admins (review + final)
+$fn = trim($_POST['firstname']);
+$ln = trim($_POST['lastname']);
+$dup1 = rtrim($SUPABASE_URL,'/').'/rest/v1/reviewadmin?select=user_id&user_fname=eq.'.rawurlencode($fn).'&user_lname=eq.'.rawurlencode($ln).'&limit=1';
+$dup2 = rtrim($SUPABASE_URL,'/').'/rest/v1/admin?select=user_id&user_fname=eq.'.rawurlencode($fn).'&user_lname=eq.'.rawurlencode($ln).'&limit=1';
+foreach ([$dup1,$dup2] as $dupu){
+    $chD = curl_init();
+    curl_setopt($chD, CURLOPT_URL, $dupu);
+    curl_setopt($chD, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($chD, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($chD, CURLOPT_TIMEOUT, 25);
+    curl_setopt($chD, CURLOPT_HTTPHEADER, [ 'apikey: '.$SUPABASE_KEY, 'Authorization: Bearer '.$SUPABASE_KEY, 'Accept: application/json' ]);
+    $dr = curl_exec($chD);
+    $dh = curl_getinfo($chD, CURLINFO_HTTP_CODE);
+    curl_close($chD);
+    if ($dh>=200 && $dh<300) {
+        $arr = json_decode($dr, true);
+        if (is_array($arr) && count($arr)>0) { respond(409, 'An admin with the same first and last name already exists.'); }
+    }
+}
+
 // Supabase Auth signup to trigger email confirmation
 $APP_URL = getenv('APP_URL') ?: loadEnvValue('APP_URL');
 $redirectTo = ($APP_URL ? rtrim($APP_URL, '/') : '') . '/pages/authentication/loginpage.php?confirmed=1';
 $authUrl = rtrim($SUPABASE_URL, '/') . '/auth/v1/signup?redirect_to=' . urlencode($redirectTo);
+$uname = trim($_POST['username']);
+// Username uniqueness across all roles
+$unameTables = ['reviewbuyer','buyer','reviewseller','seller','reviewbat','preapprovalbat','reviewadmin','admin','superadmin'];
+foreach ($unameTables as $tbl) {
+    $uurl = rtrim($SUPABASE_URL,'/').'/rest/v1/'.$tbl.'?select=username&username=eq.'.rawurlencode($uname).'&limit=1';
+    $chU = curl_init();
+    curl_setopt($chU, CURLOPT_URL, $uurl);
+    curl_setopt($chU, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($chU, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($chU, CURLOPT_TIMEOUT, 25);
+    curl_setopt($chU, CURLOPT_HTTPHEADER, [ 'apikey: '.$SUPABASE_KEY, 'Authorization: Bearer '.$SUPABASE_KEY, 'Accept: application/json' ]);
+    $ur = curl_exec($chU);
+    $uh = curl_getinfo($chU, CURLINFO_HTTP_CODE);
+    curl_close($chU);
+    if ($uh>=200 && $uh<300) { $ua = json_decode($ur, true); if (is_array($ua) && count($ua)>0) { respond(409, 'Username already taken. Please choose another.'); } }
+}
 $authPayload = json_encode([
     'email' => $_POST['email'],
     'password' => $_POST['password'],
@@ -78,6 +115,8 @@ curl_setopt($chAuth, CURLOPT_HTTPHEADER, [
     'Accept: application/json'
 ]);
 curl_setopt($chAuth, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($chAuth, CURLOPT_CONNECTTIMEOUT, 10);
+curl_setopt($chAuth, CURLOPT_TIMEOUT, 25);
 curl_setopt($chAuth, CURLOPT_POSTFIELDS, $authPayload);
 $authRes = curl_exec($chAuth);
 $authHttp = curl_getinfo($chAuth, CURLINFO_HTTP_CODE);
@@ -116,6 +155,8 @@ curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Prefer: return=representation'
 ]);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+curl_setopt($ch, CURLOPT_TIMEOUT, 25);
 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([$payload]));
 $res = curl_exec($ch);
 $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -145,14 +186,11 @@ $lname = isset($_POST['lastname']) ? $_POST['lastname'] : '';
 $fullname = trim($fname.' '.($mname?:'').' '.$lname);
 $sanitized = strtolower(preg_replace('/[^a-z0-9]+/i','_', $fullname));
 $sanitized = trim($sanitized, '_');
-$email = isset($_POST['email']) ? $_POST['email'] : '';
-$esan = strtolower(preg_replace('/[^a-z0-9]+/i','_', $email));
-$esan = trim($esan, '_');
 $orig = $_FILES['supporting_doc']['name'];
 $ext = '';
 $pos = strrpos($orig, '.');
 if ($pos !== false) { $ext = substr($orig, $pos); }
-$finalName = (($sanitized !== '') ? $sanitized : 'admin').'_' . $esan . $ext;
+$finalName = (($sanitized !== '') ? $sanitized : 'admin') . $ext;
 
 // Upload to bucket reviewusers under admin folder
 $path = 'admin/'.$finalName;
@@ -179,6 +217,8 @@ curl_setopt($ch2, CURLOPT_HTTPHEADER, [
 curl_setopt($ch2, CURLOPT_INFILE, $fp);
 curl_setopt($ch2, CURLOPT_INFILESIZE, $contentLength);
 curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch2, CURLOPT_CONNECTTIMEOUT, 10);
+curl_setopt($ch2, CURLOPT_TIMEOUT, 120);
 $res2 = curl_exec($ch2);
 $http2 = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
 $err2 = curl_error($ch2);

@@ -30,13 +30,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Passwords do not match.';
     }
 
+    if (!$error) {
+        [$dupr,$dups,$dupe] = sb_rest('GET', 'superadmin', [
+          'select' => 'user_id',
+          'user_fname' => 'eq.'.$first,
+          'user_lname' => 'eq.'.$last,
+          'limit' => '1'
+        ]);
+        if ($dups>=200 && $dups<300 && is_array($dupr) && count($dupr)>0) {
+            $error = 'A superadmin with the same first and last name already exists.';
+        }
+    }
+
+    // Username uniqueness across all roles
+    if (!$error) {
+        $uname = $username;
+        $tables = ['reviewbuyer','buyer','reviewseller','seller','reviewbat','preapprovalbat','reviewadmin','admin','superadmin'];
+        foreach ($tables as $t) {
+            [$ur,$us,$ue] = sb_rest('GET', $t, [ 'select' => 'username', 'username' => 'eq.'.$uname, 'limit' => '1' ]);
+            if ($us>=200 && $us<300 && is_array($ur) && count($ur)>0) { $error = 'Username already taken. Please choose another.'; break; }
+        }
+    }
+
     if (!$error && isset($_FILES['idphoto']) && $_FILES['idphoto']['error'] === UPLOAD_ERR_OK) {
         $tmp = $_FILES['idphoto']['tmp_name'];
         $orig = $_FILES['idphoto']['name'];
         $ext = pathinfo($orig, PATHINFO_EXTENSION);
         $safeFull = preg_replace('/[^A-Za-z0-9_\- ]/','', str_replace(' ','_', $fullname));
-        $safeEmail = preg_replace('/[^A-Za-z0-9_\-]/','_', strtolower($email));
-        $fname = ($safeFull !== '' ? $safeFull : 'superadmin').'_'. ($safeEmail ?: 'email') . ($ext?('.'.$ext):'');
+        $fname = ($safeFull !== '' ? $safeFull : 'superadmin') . ($ext?('.'.$ext):'');
         $uploadedFileName = $fname;
 
         $base = function_exists('sb_base_url') ? sb_base_url() : (getenv('SUPABASE_URL') ?: '');
@@ -49,6 +70,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           CURLOPT_URL => $pathUrl,
           CURLOPT_RETURNTRANSFER => true,
           CURLOPT_CUSTOMREQUEST => 'POST',
+          CURLOPT_CONNECTTIMEOUT => 10,
+          CURLOPT_TIMEOUT => 60,
           CURLOPT_HTTPHEADER => [
             'apikey: '.(function_exists('sb_anon_key')? sb_anon_key() : (getenv('SUPABASE_KEY') ?: '')),
             'Authorization: Bearer '.$auth,
@@ -86,6 +109,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           CURLOPT_URL => $authUrl,
           CURLOPT_RETURNTRANSFER => true,
           CURLOPT_POST => true,
+          CURLOPT_CONNECTTIMEOUT => 10,
+          CURLOPT_TIMEOUT => 25,
           CURLOPT_HTTPHEADER => [
             'apikey: '.$apikey,
             'Content-Type: application/json'
@@ -287,5 +312,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
     })();
     </script>
+    <script src="/pages/authentication/common/registration-validation.js"></script>
 </body>
 </html>

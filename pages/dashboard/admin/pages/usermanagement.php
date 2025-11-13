@@ -18,7 +18,8 @@ if (isset($_GET['doc']) && $_GET['doc'] === '1'){
   $san = trim($san, '_');
   $esan = strtolower(preg_replace('/[^a-z0-9]+/i','_', $email));
   $esan = trim($esan, '_');
-  $expectedEmailBase = ($san !== '' ? $san : 'user').'_'.$esan; // new pattern
+  $expectedNameBase = ($san !== '' ? $san : 'user'); // newest pattern: fullname only
+  $expectedEmailBase = ($san !== '' ? $san : 'user').'_'.$esan; // fallback pattern
   // Prepare legacy created-based base as fallback
   $createdStr = preg_replace('/[^0-9]/','', $created);
   if ($createdStr==='') { $t=strtotime($created); $createdStr = $t? date('YmdHis',$t) : ''; }
@@ -33,6 +34,8 @@ if (isset($_GET['doc']) && $_GET['doc'] === '1'){
     CURLOPT_URL => $listUrl,
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
+    CURLOPT_CONNECTTIMEOUT => 10,
+    CURLOPT_TIMEOUT => 25,
     CURLOPT_HTTPHEADER => [ 'apikey: '.$key, 'Authorization: Bearer '.$key, 'Content-Type: application/json' ],
     CURLOPT_POSTFIELDS => json_encode(['prefix' => $listPrefix])
   ]);
@@ -43,10 +46,19 @@ if (isset($_GET['doc']) && $_GET['doc'] === '1'){
   $items = json_decode($listRaw, true);
   if (!is_array($items)) { echo json_encode(['ok'=>false,'error'=>'bad list']); exit; }
   $objectName = null;
+  // Prefer exact fullname (without extension) match
   foreach ($items as $it){
     $name = $it['name'] ?? '';
-    // Supabase returns names relative to the prefix; match against expected base
-    if ($name!=='' && $esan !== '' && strpos($name, $expectedEmailBase) === 0){ $objectName = $listPrefix.$name; break; }
+    if ($name==='') continue;
+    $noext = pathinfo($name, PATHINFO_FILENAME);
+    if ($noext === $expectedNameBase){ $objectName = $listPrefix.$name; break; }
+  }
+  // Fallback: email-based filenames
+  if (!$objectName && $esan !== ''){
+    foreach ($items as $it){
+      $name = $it['name'] ?? '';
+      if ($name!=='' && strpos($name, $expectedEmailBase) === 0){ $objectName = $listPrefix.$name; break; }
+    }
   }
   // Fallback: legacy created-based filenames
   if (!$objectName && $createdStr !== ''){
@@ -64,6 +76,8 @@ if (isset($_GET['doc']) && $_GET['doc'] === '1'){
     CURLOPT_URL => $signUrl,
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
+    CURLOPT_CONNECTTIMEOUT => 10,
+    CURLOPT_TIMEOUT => 25,
     CURLOPT_HTTPHEADER => [ 'apikey: '.$key, 'Authorization: Bearer '.$key, 'Content-Type: application/json' ],
     CURLOPT_POSTFIELDS => $signBody
   ]);
@@ -96,7 +110,12 @@ if (isset($_GET['decide'])){
   if (!in_array($role, ['buyer','seller','bat'], true)) { echo json_encode(['ok'=>false,'error'=>'invalid role']); exit; }
   if (!is_numeric($id)) { echo json_encode(['ok'=>false,'error'=>'missing id']); exit; }
   $admin_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : (isset($_SESSION['admin_id']) ? $_SESSION['admin_id'] : null);
-  if (!$admin_id) { echo json_encode(['ok'=>false,'error'=>'no admin id in session']); exit; }
+  if (!$admin_id) { echo json_encode(['ok'=>false,'error'=>'No admin id in session']); exit; }
+  // Ensure admin_id exists in admin table (FK safety)
+  [$ar,$ah,$ae] = sb_rest('GET','admin',['select'=>'user_id','user_id'=>'eq.'.$admin_id,'limit'=>'1']);
+  if (!($ah>=200 && $ah<300 && is_array($ar) && count($ar)===1)){
+    echo json_encode(['ok'=>false,'error'=>'Admin account not recognized or not verified.']); exit;
+  }
 
   $srcTable = $role === 'buyer' ? 'reviewbuyer' : ($role === 'seller' ? 'reviewseller' : 'reviewbat');
   $destTable = null;
@@ -113,6 +132,40 @@ if (isset($_GET['decide'])){
     echo json_encode(['ok'=>false,'error'=>'source fetch failed (http '.$st.')','detail'=>$detail]); exit;
   }
   $row = $rows[0];
+
+  // Preflight uniqueness checks in destination table on approve
+  if ($action === 'approve'){
+    $usernameVal = $row['username'] ?? '';
+    if ($usernameVal !== ''){
+      [$ur,$uh,$ue] = sb_rest('GET', $destTable, ['select'=>'user_id','username'=>'eq.'.$usernameVal,'limit'=>'1']);
+      if ($uh>=200 && $uh<300 && is_array($ur) && count($ur)>0){ echo json_encode(['ok'=>false,'error'=>'Username already exists in '.$role.'.']); exit; }
+    }
+    $emailVal = $row['email'] ?? '';
+    if ($emailVal !== ''){
+      [$erows,$eh,$ee] = sb_rest('GET', $destTable, ['select'=>'user_id','email'=>'eq.'.$emailVal,'limit'=>'1']);
+      if ($eh>=200 && $eh<300 && is_array($erows) && count($erows)>0){ echo json_encode(['ok'=>false,'error'=>'Email already exists in '.$role.'.']); exit; }
+    }
+    // Role-specific identifiers
+    if ($role === 'seller'){
+      $rsb = $row['rsbsanum'] ?? '';
+      if ($rsb !== ''){
+        [$rr,$rh,$re] = sb_rest('GET', $destTable, ['select'=>'user_id','rsbsanum'=>'eq.'.$rsb,'limit'=>'1']);
+        if ($rh>=200 && $rh<300 && is_array($rr) && count($rr)>0){ echo json_encode(['ok'=>false,'error'=>'RSBSA number already exists in seller.']); exit; }
+      }
+    }
+    $doc = $row['docnum'] ?? '';
+    if ($doc !== ''){
+      [$drw,$dhh,$dee] = sb_rest('GET', $destTable, ['select'=>'user_id','docnum'=>'eq.'.$doc,'limit'=>'1']);
+      if ($dhh>=200 && $dhh<300 && is_array($drw) && count($drw)>0){ echo json_encode(['ok'=>false,'error'=>'Document number already exists in '.$role.'.']); exit; }
+    }
+    // Firstname+Lastname uniqueness per role
+    $firstVal = $row['user_fname'] ?? '';
+    $lastVal  = $row['user_lname'] ?? '';
+    if ($firstVal !== '' && $lastVal !== ''){
+      [$nr,$nh,$ne] = sb_rest('GET', $destTable, ['select'=>'user_id','user_fname'=>'eq.'.$firstVal,'user_lname'=>'eq.'.$lastVal,'limit'=>'1']);
+      if ($nh>=200 && $nh<300 && is_array($nr) && count($nr)>0){ echo json_encode(['ok'=>false,'error'=>'A user with the same first and last name already exists in '.$role.'.']); exit; }
+    }
+  }
 
   // Build destination payload
   $payload = [];
@@ -208,6 +261,7 @@ if (isset($_GET['decide'])){
   $san = trim($san, '_');
   $esan = strtolower(preg_replace('/[^a-z0-9]+/i','_', $email));
   $esan = trim($esan, '_');
+  $expectedNameBase = ($san !== '' ? $san : 'user');
   $expectedEmailBase = ($san !== '' ? $san : 'user').'_'.$esan;
   $createdStr = preg_replace('/[^0-9]/','', $created);
   if ($createdStr==='') { $t=strtotime($created); $createdStr = $t? date('YmdHis',$t) : ''; }
@@ -218,6 +272,8 @@ if (isset($_GET['decide'])){
     CURLOPT_URL => $listUrl,
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
+    CURLOPT_CONNECTTIMEOUT => 10,
+    CURLOPT_TIMEOUT => 25,
     CURLOPT_HTTPHEADER => [ 'apikey: '.$key, 'Authorization: Bearer '.$key, 'Content-Type: application/json' ],
     CURLOPT_POSTFIELDS => json_encode(['prefix'=>$listPrefix])
   ]);
@@ -227,7 +283,13 @@ if (isset($_GET['decide'])){
   if ($http>=200 && $http<300){
     $items = json_decode($listRaw, true);
     if (is_array($items)){
-      foreach ($items as $it){ $name = $it['name'] ?? ''; if ($name!=='' && $esan!=='' && strpos($name, $expectedEmailBase)===0){ $objectName = $listPrefix.$name; break; } }
+      // 1) fullname-only
+      foreach ($items as $it){ $name = $it['name'] ?? ''; if ($name==='') continue; $noext = pathinfo($name, PATHINFO_FILENAME); if ($noext === $expectedNameBase){ $objectName = $listPrefix.$name; break; } }
+      // 2) email-based fallback
+      if (!$objectName && $esan!==''){
+        foreach ($items as $it){ $name = $it['name'] ?? ''; if ($name!=='' && strpos($name, $expectedEmailBase)===0){ $objectName = $listPrefix.$name; break; } }
+      }
+      // 3) created-based legacy fallback
       if (!$objectName && $createdStr!==''){
         foreach ($items as $it){ $name = $it['name'] ?? ''; if ($name!=='' && strpos($name, $expectedCreatedBase)===0){ $objectName = $listPrefix.$name; break; } }
       }
@@ -242,6 +304,8 @@ if (isset($_GET['decide'])){
     curl_setopt_array($chd,[
       CURLOPT_URL => $srcUrl,
       CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_CONNECTTIMEOUT => 10,
+      CURLOPT_TIMEOUT => 25,
       CURLOPT_HTTPHEADER => [ 'apikey: '.$key, 'Authorization: Bearer '.$key ]
     ]);
     $bytes = curl_exec($chd);
@@ -256,6 +320,8 @@ if (isset($_GET['decide'])){
         CURLOPT_URL => $upUrl,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_CUSTOMREQUEST => 'POST',
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 120,
         CURLOPT_HTTPHEADER => [ 'apikey: '.$key, 'Authorization: Bearer '.$key, 'Content-Type: application/octet-stream', 'x-upsert: true' ],
         CURLOPT_POSTFIELDS => $bytes
       ]);
@@ -270,6 +336,8 @@ if (isset($_GET['decide'])){
           CURLOPT_URL => $rmUrl,
           CURLOPT_RETURNTRANSFER => true,
           CURLOPT_CUSTOMREQUEST => 'DELETE',
+          CURLOPT_CONNECTTIMEOUT => 10,
+          CURLOPT_TIMEOUT => 20,
           CURLOPT_HTTPHEADER => [ 'apikey: '.$key, 'Authorization: Bearer '.$key ]
         ]);
         $rmr = curl_exec($chr);
@@ -454,7 +522,13 @@ $buyers = []; $sellers = []; $bats = [];
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       }).then(function(r){ return r.json(); }).then(function(j){
-        if (!j || !j.ok){ actionStatus.textContent = 'Failed: '+((j&&j.error)||''); setButtons(true); return; }
+        if (!j || !j.ok){
+          var msg = 'Failed: '+((j&&j.error)||'');
+          if (j && j.detail) { try { var d = (typeof j.detail==='string')? j.detail : JSON.stringify(j.detail); msg += ' • '+d; } catch(e){} }
+          actionStatus.textContent = msg;
+          setButtons(true);
+          return;
+        }
         actionStatus.textContent = 'Success';
         if (current.tr && current.tr.parentNode){ current.tr.parentNode.removeChild(current.tr); }
         setTimeout(function(){ actionStatus.textContent=''; modal.style.display='none'; }, 400);

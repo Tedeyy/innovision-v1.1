@@ -39,6 +39,8 @@ function sb_auth_sign_in($email, $password){
         CURLOPT_URL => $url,
         CURLOPT_POST => true,
         CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 25,
         CURLOPT_HTTPHEADER => [
             'apikey: '.sb_anon_key(),
             'Content-Type: application/json',
@@ -66,6 +68,8 @@ function sb_auth_refresh(){
         CURLOPT_URL => $url,
         CURLOPT_POST => true,
         CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 25,
         CURLOPT_HTTPHEADER => [
             'apikey: '.sb_anon_key(),
             'Content-Type: application/json',
@@ -91,6 +95,8 @@ function sb_auth_logout(){
         CURLOPT_URL => $url,
         CURLOPT_POST => true,
         CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 20,
         CURLOPT_HTTPHEADER => [
             'apikey: '.sb_anon_key(),
             'Authorization: Bearer '.$at,
@@ -128,6 +134,8 @@ function sb_rest($method, $path, $query = [], $body = null, $headers = []){
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, strtoupper($method));
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 25);
     if ($body !== null){
         $json = is_string($body) ? $body : json_encode($body);
         $hdrs[] = 'Content-Type: application/json';
