@@ -79,6 +79,10 @@ foreach ($typeNames as $i=>$tn){
                 <input type="search" name="q" placeholder="Search" />
             </form>
         </div>
+        <div class="nav-center" style="display:flex;gap:16px;align-items:center;">
+            <a class="btn" href="pages/usermanagement.php" style="background:#4a5568;">Users</a>
+            <a class="btn" href="pages/listingmanagement.php" style="background:#4a5568;">Listings</a>
+        </div>
         <div class="nav-right">
             <div class="greeting">hello <?php echo htmlspecialchars($firstname, ENT_QUOTES, 'UTF-8'); ?> • <?php echo htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8'); ?></div>
             <a class="btn" href="../logout.php">Logout</a>

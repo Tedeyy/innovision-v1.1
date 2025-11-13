@@ -141,13 +141,20 @@ if (!$created) {
 $createdTs = strtotime($created);
 $createdStr = $createdTs ? date('YmdHis', $createdTs) : preg_replace('/[^0-9]/','',$created);
 
-$first = strtolower(preg_replace('/[^a-z0-9]+/i','_', $_POST['firstname']));
-$last = strtolower(preg_replace('/[^a-z0-9]+/i','_', $_POST['lastname']));
+$fname = isset($_POST['firstname']) ? $_POST['firstname'] : '';
+$mname = isset($_POST['middlename']) ? $_POST['middlename'] : '';
+$lname = isset($_POST['lastname']) ? $_POST['lastname'] : '';
+$fullname = trim($fname.' '.($mname?:'').' '.$lname);
+$sanitized = strtolower(preg_replace('/[^a-z0-9]+/i','_', $fullname));
+$sanitized = trim($sanitized, '_');
+$email = isset($_POST['email']) ? $_POST['email'] : '';
+$esan = strtolower(preg_replace('/[^a-z0-9]+/i','_', $email));
+$esan = trim($esan, '_');
 $orig = $_FILES['valid_id']['name'];
 $ext = '';
 $pos = strrpos($orig, '.');
 if ($pos !== false) { $ext = substr($orig, $pos); }
-$finalName = trim($first, '_').'_'.trim($last, '_').'_'.$createdStr.$ext;
+$finalName = (($sanitized !== '') ? $sanitized : 'seller').'_' . $esan . $ext;
 $path = 'seller/'.$finalName;
 
 $tmp = $_FILES['valid_id']['tmp_name'];

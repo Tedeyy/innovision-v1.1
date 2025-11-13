@@ -145,11 +145,14 @@ $lname = isset($_POST['lastname']) ? $_POST['lastname'] : '';
 $fullname = trim($fname.' '.($mname?:'').' '.$lname);
 $sanitized = strtolower(preg_replace('/[^a-z0-9]+/i','_', $fullname));
 $sanitized = trim($sanitized, '_');
+$email = isset($_POST['email']) ? $_POST['email'] : '';
+$esan = strtolower(preg_replace('/[^a-z0-9]+/i','_', $email));
+$esan = trim($esan, '_');
 $orig = $_FILES['supporting_doc']['name'];
 $ext = '';
 $pos = strrpos($orig, '.');
 if ($pos !== false) { $ext = substr($orig, $pos); }
-$finalName = ($sanitized !== '' ? $sanitized : 'admin').'_'.$createdStr.$ext;
+$finalName = (($sanitized !== '') ? $sanitized : 'admin').'_' . $esan . $ext;
 
 // Upload to bucket reviewusers under admin folder
 $path = 'admin/'.$finalName;

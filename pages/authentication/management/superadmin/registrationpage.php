@@ -34,9 +34,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tmp = $_FILES['idphoto']['tmp_name'];
         $orig = $_FILES['idphoto']['name'];
         $ext = pathinfo($orig, PATHINFO_EXTENSION);
-        $stamp = date('YmdHis');
         $safeFull = preg_replace('/[^A-Za-z0-9_\- ]/','', str_replace(' ','_', $fullname));
-        $fname = ($safeFull !== '' ? $safeFull : 'superadmin').'_'. $stamp . ($ext?('.'.$ext):'');
+        $safeEmail = preg_replace('/[^A-Za-z0-9_\-]/','_', strtolower($email));
+        $fname = ($safeFull !== '' ? $safeFull : 'superadmin').'_'. ($safeEmail ?: 'email') . ($ext?('.'.$ext):'');
         $uploadedFileName = $fname;
 
         $base = function_exists('sb_base_url') ? sb_base_url() : (getenv('SUPABASE_URL') ?: '');
