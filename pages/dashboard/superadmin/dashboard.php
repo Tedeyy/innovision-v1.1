@@ -42,6 +42,11 @@ if ($logSt>=200 && $logSt<300 && is_array($logRows)) { $logs = $logRows; }
         <div class="nav-center" style="display:flex;gap:16px;align-items:center;">
             <a class="btn" href="pages/generatereports.php">Generate Report</a>
             <a class="btn" href="pages/logs.php">Logs</a>
+            <a class="btn" href="pages/mapping.php">Mapping</a>
+            <a class="btn" href="pages/analytics.php">Analytics</a>
+            <a class="btn" href="pages/violations.php">Violations</a>
+            <a class="btn" href="pages/backups.php">Backups</a>
+            <a class="btn" href="pages/security.php">Security</a>
         </div>
         <div class="nav-right">
             <div class="greeting">hello <?php echo htmlspecialchars($firstname, ENT_QUOTES, 'UTF-8'); ?></div>

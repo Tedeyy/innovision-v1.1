@@ -34,6 +34,7 @@ if (!$table){ json_fail('User row not found for role', 404); }
 
 // Try updating using common column variants.
 $candidates = [
+  ['lat'=>$lat,'lng'=>$lng],
   ['latitude'=>$lat,'longitude'=>$lng],
   ['location_lat'=>$lat,'location_lng'=>$lng],
   ['location'=>json_encode(['lat'=>$lat,'lng'=>$lng])],
