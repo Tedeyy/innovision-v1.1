@@ -9,6 +9,17 @@ if ($role === 'bat') {
     $isVerified = ($src === 'bat');
 }
 $statusLabel = $isVerified ? 'Verified' : 'Under review';
+require_once __DIR__ . '/../../authentication/lib/supabase_client.php';
+$batId = $_SESSION['user_id'] ?? null;
+$toReview = 0; $approvedCount = 0; $deniedCount = 0;
+if ($batId){
+    [$r1,$s1,$e1] = sb_rest('GET','reviewlivestocklisting',['select'=>'listing_id']);
+    if ($s1>=200 && $s1<300 && is_array($r1)) $toReview = count($r1);
+    [$r2,$s2,$e2] = sb_rest('GET','livestocklisting',['select'=>'listing_id','bat_id'=>'eq.'.$batId]);
+    if ($s2>=200 && $s2<300 && is_array($r2)) $approvedCount = count($r2);
+    [$r3,$s3,$e3] = sb_rest('GET','deniedlivestocklisting',['select'=>'listing_id','bat_id'=>'eq.'.$batId]);
+    if ($s3>=200 && $s3<300 && is_array($r3)) $deniedCount = count($r3);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -42,7 +53,20 @@ $statusLabel = $isVerified ? 'Verified' : 'Under review';
             </div>
         </div>
         <div class="card">
-            <p>Use this space to validate accounts and assist administrative tasks.</p>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:10px 0;">
+                <div class="card" style="padding:12px;">
+                    <div style="color:#4a5568;font-size:12px;">To Review</div>
+                    <div style="font-size:20px;font-weight:600;"><?php echo (int)$toReview; ?></div>
+                </div>
+                <div class="card" style="padding:12px;">
+                    <div style="color:#4a5568;font-size:12px;">Approved</div>
+                    <div style="font-size:20px;font-weight:600;"><?php echo (int)$approvedCount; ?></div>
+                </div>
+                <div class="card" style="padding:12px;">
+                    <div style="color:#4a5568;font-size:12px;">Denied</div>
+                    <div style="font-size:20px;font-weight:600;"><?php echo (int)$deniedCount; ?></div>
+                </div>
+            </div>
             <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
                 <a class="btn" href="pages/review_listings.php">Review Listings</a>
             </div>

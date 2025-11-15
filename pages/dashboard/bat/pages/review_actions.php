@@ -64,6 +64,8 @@ if ($action === 'approve'){
       'bat_id'=>(int)$bat_id
     ]];
     sb_rest('POST','livestocklisting_logs',[], $logPayload, ['Prefer: return=representation']);
+    // remove from review table
+    [$rr,$rs,$re] = sb_rest('DELETE','reviewlivestocklisting',[ 'listing_id'=>'eq.'.$listing_id ]);
     $_SESSION['flash_message'] = 'Listing approved.';
   }
 } else if ($action === 'deny'){
@@ -156,6 +158,8 @@ if ($action === 'approve'){
         }
       }
     }
+    // remove from review table
+    [$rr2,$rs2,$re2] = sb_rest('DELETE','reviewlivestocklisting',[ 'listing_id'=>'eq.'.$listing_id ]);
     $_SESSION['flash_message'] = 'Listing denied.'.($okImages?'' : ' Some images failed to move.');
   }
 }

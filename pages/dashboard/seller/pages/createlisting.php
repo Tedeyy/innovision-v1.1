@@ -110,10 +110,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               ];
             }
           }
-          if (count($validFiles) === 0){
-            $error = 'Please upload at least 1 image (up to 3).';
+          if (count($validFiles) !== 3){
+            $error = 'Please upload exactly 3 images.';
           } else {
-            if (count($validFiles) > 3){ $validFiles = array_slice($validFiles, 0, 3); }
             $base = function_exists('sb_base_url') ? sb_base_url() : (getenv('SUPABASE_URL') ?: '');
             $service = function_exists('sb_env') ? (sb_env('SUPABASE_SERVICE_ROLE_KEY') ?: '') : (getenv('SUPABASE_SERVICE_ROLE_KEY') ?: '');
             $auth = $_SESSION['supa_access_token'] ?? ($service ?: (getenv('SUPABASE_KEY') ?: ''));
