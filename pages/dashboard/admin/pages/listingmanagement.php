@@ -60,18 +60,29 @@ function fetch_seller($seller_id){
 
     <?php foreach ($rows as $r):
       $seller = fetch_seller((int)$r['seller_id']);
-      $folder = ((int)$r['seller_id']).'_'.((int)$r['listing_id']);
+      // New folder: <seller_id>_<fullname_sanitized>
+      $sfname = $seller['user_fname'] ?? '';
+      $smname = $seller['user_mname'] ?? '';
+      $slname = $seller['user_lname'] ?? '';
+      $fullname = trim(($sfname).' '.($smname?:'').' '.($slname));
+      $sanFull = strtolower(preg_replace('/[^a-z0-9]+/i','_', $fullname));
+      $sanFull = trim($sanFull, '_');
+      if ($sanFull === '') { $sanFull = 'user'; }
+      $newFolder = ((int)$r['seller_id']).'_'.$sanFull;
+      $legacyFolder = ((int)$r['seller_id']).'_'.((int)$r['listing_id']);
+      $createdKey = isset($r['created']) ? date('YmdHis', strtotime($r['created'])) : '';
       $lat = null; $lng = null;
       if ($seller && !empty($seller['location'])){
         $loc = json_decode($seller['location'], true);
         if (is_array($loc)) { $lat = $loc['lat'] ?? null; $lng = $loc['lng'] ?? null; }
       }
     ?>
-      <div class="card" data-listing-id="<?php echo (int)$r['listing_id']; ?>" data-lat="<?php echo $lat!==null ? safe($lat) : ''; ?>" data-lng="<?php echo $lng!==null ? safe($lng) : ''; ?>">
+      <div class="card" data-listing-id="<?php echo (int)$r['listing_id']; ?>" data-folder="<?php echo safe($newFolder ?: $legacyFolder); ?>" data-lat="<?php echo $lat!==null ? safe($lat) : ''; ?>" data-lng="<?php echo $lng!==null ? safe($lng) : ''; ?>">
         <div class="row">
           <div class="thumbs">
-            <?php $thumb = "../../bat/pages/storage_image.php?path=listings/underreview/$folder/image1"; ?>
-            <img src="<?php echo $thumb; ?>" alt="thumbnail" onerror="this.style.display='none'" />
+            <?php $thumbNew = "../../bat/pages/storage_image.php?path=listings/underreview/$newFolder/{$createdKey}_1img.jpg"; $thumbLegacy = "../../bat/pages/storage_image.php?path=listings/underreview/$legacyFolder/image1"; ?>
+            <img class="thumb-img" src="<?php echo $thumbNew; ?>" alt="thumbnail" onerror="this.onerror=null; this.src='<?php echo $thumbLegacy; ?>';" />
+            <div class="img-error" style="display:none;color:#b91c1c;font-size:12px;margin-top:6px;"></div>
           </div>
           <div>
             <div><strong><?php echo safe($r['livestock_type'].' • '.$r['breed']); ?></strong></div>
@@ -88,8 +99,11 @@ function fetch_seller($seller_id){
         </div>
         <div id="detail-<?php echo (int)$r['listing_id']; ?>" class="detail" style="display:none;">
           <div class="detail-images">
-            <?php for ($i=1;$i<=3;$i++): $img="../../bat/pages/storage_image.php?path=listings/underreview/$folder/image$i"; ?>
-              <img src="<?php echo $img; ?>" alt="image<?php echo $i; ?>" class="detail-img" data-full="<?php echo $img; ?>" onerror="this.style.display='none'" />
+            <?php for ($i=1;$i<=3;$i++):
+              $newImg = "../../bat/pages/storage_image.php?path=listings/underreview/$newFolder/{$createdKey}_{$i}img.jpg";
+              $legacyImg = "../../bat/pages/storage_image.php?path=listings/underreview/$legacyFolder/image$i";
+            ?>
+              <img src="<?php echo $newImg; ?>" alt="image<?php echo $i; ?>" class="detail-img" data-full="<?php echo $newImg; ?>" onerror="this.onerror=null; this.src='<?php echo $legacyImg; ?>'; this.setAttribute('data-full','<?php echo $legacyImg; ?>');" />
             <?php endfor; ?>
           </div>
           <div id="map-<?php echo (int)$r['listing_id']; ?>" class="map" style="margin-top:8px;"></div>
@@ -98,6 +112,7 @@ function fetch_seller($seller_id){
             <button class="btn" name="action" value="approve" type="submit">Approve</button>
             <button class="btn" name="action" value="deny" type="submit" style="background:#e53e3e">Deny</button>
           </form>
+          <div class="detail-img-error" style="display:none;color:#b91c1c;font-size:12px;margin-top:6px;"></div>
         </div>
       </div>
     <?php endforeach; ?>
@@ -148,6 +163,31 @@ function fetch_seller($seller_id){
           var fullImage = img.getAttribute('data-full');
           modal.innerHTML = '<img src="' + fullImage + '">';
           modal.style.display = 'flex';
+        });
+      });
+      // Image error explanations
+      document.querySelectorAll('.card[data-listing-id]').forEach(function(card){
+        var folder = card.getAttribute('data-folder') || '';
+        var thumb = card.querySelector('.thumb-img');
+        var thumbErr = card.querySelector('.img-error');
+        if (thumb && thumbErr){
+          thumb.addEventListener('error', function(){
+            var attempted = thumb.getAttribute('src') || '';
+            thumbErr.textContent = 'No thumbnail at ' + attempted + ' (folder '+folder+').';
+            thumbErr.style.display = 'block';
+          }, { once: true });
+        }
+        var imgs = card.querySelectorAll('.detail-img');
+        var detailErr = card.querySelector('.detail-img-error');
+        var failCount = 0; var total = imgs.length;
+        imgs.forEach(function(im){
+          im.addEventListener('error', function(){
+            failCount++;
+            if (failCount === total && detailErr){
+              detailErr.textContent = 'No images found in listings/underreview/'+folder+' (image1..3).';
+              detailErr.style.display = 'block';
+            }
+          }, { once: true });
         });
       });
       if (modal){

@@ -96,12 +96,35 @@ function storage_delete($path, $auth, $base){
   return ($code>=200 && $code<300);
 }
 
-$destFolderRoot = ($action === 'approve') ? 'listings/active' : 'listings/denied';
+$destFolderRoot = ($action === 'approve') ? 'listings/verified' : 'listings/denied';
 $okImages = true;
+// Build new-style folder and created key
+$sfname='';$smname='';$slname='';
+[$sinf,$sinfst,$sinfe] = sb_rest('GET','seller',[ 'select'=>'user_fname,user_mname,user_lname','user_id'=>'eq.'.$seller_id, 'limit'=>1 ]);
+if ($sinfst>=200 && $sinfst<300 && is_array($sinf) && isset($sinf[0])){
+  $sfname = (string)($sinf[0]['user_fname'] ?? '');
+  $smname = (string)($sinf[0]['user_mname'] ?? '');
+  $slname = (string)($sinf[0]['user_lname'] ?? '');
+}
+$fullname = trim($sfname.' '.($smname?:'').' '.$slname);
+$sanFull = strtolower(preg_replace('/[^a-z0-9]+/i','_', $fullname));
+$sanFull = trim($sanFull, '_');
+if ($sanFull===''){ $sanFull='user'; }
+$newFolder = $seller_id.'_'.$sanFull;
+$legacyFolder = $folder; // sellerId_listingId
+$createdKey = isset($rec['created']) ? date('YmdHis', strtotime($rec['created'])) : '';
+
 for ($i=1; $i<=3; $i++){
-  $src = 'listings/underreview/'.$folder.'/image'.$i;
-  $dst = $destFolderRoot.'/'.$folder.'/image'.$i;
+  // Try new scheme first
+  $src = 'listings/underreview/'.$newFolder.'/'.($createdKey!==''? ($createdKey.'_'.$i.'img.jpg') : ('image'.$i));
+  $dst = $destFolderRoot.'/'.$newFolder.'/'.basename($src);
   list($bytes,$ct,$got) = storage_get($src, $auth, $base);
+  if (!($got && $bytes!==null)){
+    // fallback to legacy scheme
+    $src = 'listings/underreview/'.$legacyFolder.'/image'.$i;
+    $dst = $destFolderRoot.'/'.$legacyFolder.'/image'.$i;
+    list($bytes,$ct,$got) = storage_get($src, $auth, $base);
+  }
   if ($got && $bytes!==null){
     if (storage_put($dst, $bytes, $ct, $auth, $base)){
       storage_delete($src, $auth, $base);
@@ -120,7 +143,7 @@ if ($action === 'approve'){
     'age'=>(int)$rec['age'],
     'weight'=>(float)$rec['weight'],
     'price'=>(float)$rec['price'],
-    'status'=>'Verified',
+    'status'=>'Active',
     'admin_id'=>(int)$admin_id,
     'bat_id'=> isset($rec['bat_id']) ? (int)$rec['bat_id'] : null,
     'created'=> $rec['created'] ?? null

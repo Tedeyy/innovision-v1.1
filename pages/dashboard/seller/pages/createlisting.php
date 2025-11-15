@@ -98,8 +98,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $listingId = $created['listing_id'] ?? null;
         $createdAt = $created['created'] ?? null;
 
-        // 3) Upload photos to storage bucket path listings/underreview/<seller_id>_<listing_id>_<created>/
+        // 3) Upload photos to storage bucket path listings/underreview/<seller_id>_<fullname>/
         if ($listingId && isset($_FILES['photos']) && is_array($_FILES['photos']['name'])){
+          // Build folder name: <seller_id>_<fullname>
+          $sfname = '';$smname='';$slname='';
+          [$sinf,$sinfst,$sinfe] = sb_rest('GET','seller',[ 'select'=>'user_fname,user_mname,user_lname','user_id'=>'eq.'.$effectiveSellerId, 'limit'=>1 ]);
+          if ($sinfst>=200 && $sinfst<300 && is_array($sinf) && isset($sinf[0])){
+            $sfname = (string)($sinf[0]['user_fname'] ?? '');
+            $smname = (string)($sinf[0]['user_mname'] ?? '');
+            $slname = (string)($sinf[0]['user_lname'] ?? '');
+          }
+          $fullname = trim($sfname.' '.($smname?:'').' '.$slname);
+          $sanFull = strtolower(preg_replace('/[^a-z0-9]+/i','_', $fullname));
+          $sanFull = trim($sanFull, '_');
+          if ($sanFull === '') { $sanFull = 'user'; }
+          // Created key as YmdHis
+          $createdKey = $createdAt ? date('YmdHis', strtotime($createdAt)) : date('YmdHis');
+
           $validFiles = [];
           $total = count($_FILES['photos']['name']);
           for ($i=0; $i<$total; $i++){
@@ -116,14 +131,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $base = function_exists('sb_base_url') ? sb_base_url() : (getenv('SUPABASE_URL') ?: '');
             $service = function_exists('sb_env') ? (sb_env('SUPABASE_SERVICE_ROLE_KEY') ?: '') : (getenv('SUPABASE_SERVICE_ROLE_KEY') ?: '');
             $auth = $_SESSION['supa_access_token'] ?? ($service ?: (getenv('SUPABASE_KEY') ?: ''));
-            $folder = ((int)$effectiveSellerId).'_'.((int)$listingId);
+            $folder = ((int)$effectiveSellerId).'_'.$sanFull;
             $bucketPathPrefix = rtrim($base,'/').'/storage/v1/object/listings/underreview/'.$folder.'/';
             $idx = 1;
             foreach ($validFiles as $vf){
               $tmp = $vf['tmp'];
-              $fname = 'image'.$idx; // no extension per requirement
+              $fname = $createdKey.'_'.$idx.'img.jpg';
               $pathUrl = $bucketPathPrefix.$fname;
-              $mime = mime_content_type($tmp) ?: 'application/octet-stream';
+              $mime = mime_content_type($tmp) ?: 'image/jpeg';
               $ch = curl_init();
               curl_setopt_array($ch, [
                 CURLOPT_URL => $pathUrl,

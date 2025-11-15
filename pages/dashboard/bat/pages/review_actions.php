@@ -98,15 +98,30 @@ if ($action === 'approve'){
     ]];
     sb_rest('POST','livestocklisting_logs',[], $logPayload, ['Prefer: return=representation']);
     $seller_id = (int)$rec['seller_id'];
-    $folder = $seller_id.'_'.((int)$rec['listing_id']);
+    // Build new-style folder <seller_id>_<fullname_sanitized>
+    $sfname='';$smname='';$slname='';
+    [$sinf,$sinfst,$sinfe] = sb_rest('GET','seller',[ 'select'=>'user_fname,user_mname,user_lname','user_id'=>'eq.'.$seller_id, 'limit'=>1 ]);
+    if ($sinfst>=200 && $sinfst<300 && is_array($sinf) && isset($sinf[0])){
+      $sfname = (string)($sinf[0]['user_fname'] ?? '');
+      $smname = (string)($sinf[0]['user_mname'] ?? '');
+      $slname = (string)($sinf[0]['user_lname'] ?? '');
+    }
+    $fullname = trim($sfname.' '.($smname?:'').' '.$slname);
+    $sanFull = strtolower(preg_replace('/[^a-z0-9]+/i','_', $fullname));
+    $sanFull = trim($sanFull, '_');
+    if ($sanFull===''){ $sanFull='user'; }
+    $newFolder = $seller_id.'_'.$sanFull;
+    $legacyFolder = $seller_id.'_'.((int)$rec['listing_id']);
+    $createdKey = isset($rec['created']) ? date('YmdHis', strtotime($rec['created'])) : '';
     $base = function_exists('sb_base_url') ? sb_base_url() : (getenv('SUPABASE_URL') ?: '');
     $service = function_exists('sb_env') ? (sb_env('SUPABASE_SERVICE_ROLE_KEY') ?: '') : (getenv('SUPABASE_SERVICE_ROLE_KEY') ?: '');
     $auth = $_SESSION['supa_access_token'] ?? ($service ?: (getenv('SUPABASE_KEY') ?: ''));
     $okImages = true;
     $apikey = function_exists('sb_anon_key')? sb_anon_key() : (getenv('SUPABASE_KEY') ?: '');
     for ($i=1; $i<=3; $i++){
-      $src = 'listings/underreview/'.$folder.'/image'.$i;
-      $dst = 'listings/denied/'.$folder.'/image'.$i;
+      // Try new scheme first
+      $src = 'listings/underreview/'.$newFolder.'/'.($createdKey!==''? ($createdKey.'_'.$i.'img.jpg') : ('image'.$i));
+      $dst = 'listings/denied/'.$newFolder.'/'.basename($src);
       $getUrl = rtrim($base,'/').'/storage/v1/object/'.ltrim($src,'/');
       $ch = curl_init();
       curl_setopt_array($ch,[
@@ -121,6 +136,25 @@ if ($action === 'approve'){
       $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
       $ct = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
       curl_close($ch);
+      if (!($code>=200 && $code<300) || $bytes===false){
+        // fallback to legacy path
+        $src = 'listings/underreview/'.$legacyFolder.'/image'.$i;
+        $dst = 'listings/denied/'.$legacyFolder.'/image'.$i;
+        $getUrl = rtrim($base,'/').'/storage/v1/object/'.ltrim($src,'/');
+        $ch = curl_init();
+        curl_setopt_array($ch,[
+          CURLOPT_URL=>$getUrl,
+          CURLOPT_RETURNTRANSFER=>true,
+          CURLOPT_HTTPHEADER=>[
+            'apikey: '.$apikey,
+            'Authorization: Bearer '.$auth,
+          ]
+        ]);
+        $bytes = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $ct = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        curl_close($ch);
+      }
       if ($code>=200 && $code<300 && $bytes!==false){
         $putUrl = rtrim($base,'/').'/storage/v1/object/'.ltrim($dst,'/');
         $ch2 = curl_init();
