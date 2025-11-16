@@ -4,6 +4,106 @@ require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
 
 function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
+function parse_loc_pair($locStr){
+  $lat = null; $lng = null;
+  if (!$locStr) return [null,null];
+  $j = json_decode($locStr, true);
+  if (is_array($j)){
+    if (isset($j['lat']) && isset($j['lng'])){ $lat = (float)$j['lat']; $lng = (float)$j['lng']; return [$lat,$lng]; }
+    if (isset($j[0]) && isset($j[1])){ $lat = (float)$j[0]; $lng = (float)$j[1]; return [$lat,$lng]; }
+  }
+  if (strpos($locStr, ',') !== false){
+    $parts = explode(',', $locStr, 2);
+    $lat = (float)trim($parts[0]);
+    $lng = (float)trim($parts[1]);
+    return [$lat,$lng];
+  }
+  return [null,null];
+}
+
+// Pins endpoint: buyer location + active/sold location pins
+if (isset($_GET['pins']) && $_GET['pins']=='1'){
+  $buyer_id = $_SESSION['user_id'] ?? null;
+  $role = $_SESSION['role'] ?? '';
+  $buyer = null; $buyerLat = null; $buyerLng = null;
+  if ($buyer_id && $role==='buyer'){
+    [$bres,$bst,$berr] = sb_rest('GET','buyer',[ 'select'=>'user_id,location', 'user_id'=>'eq.'.$buyer_id, 'limit'=>1 ]);
+    if ($bst>=200 && $bst<300 && is_array($bres) && isset($bres[0])){
+      $buyer = $bres[0];
+      if (!empty($buyer['location'])){
+        $loc = json_decode($buyer['location'], true);
+        if (is_array($loc)){ $buyerLat = $loc['lat'] ?? null; $buyerLng = $loc['lng'] ?? null; }
+      }
+    }
+  }
+  // Build filters (same as list view)
+  $filters = [];
+  $andConds = [];
+  if (!empty($_GET['livestock_type'])){ $filters['livestock_type'] = 'eq.'.$_GET['livestock_type']; }
+  if (!empty($_GET['breed'])){ $filters['breed'] = 'eq.'.$_GET['breed']; }
+  if (isset($_GET['min_age']) && $_GET['min_age']!==''){ $andConds[] = 'age.gte.'.(int)$_GET['min_age']; }
+  if (isset($_GET['max_age']) && $_GET['max_age']!==''){ $andConds[] = 'age.lte.'.(int)$_GET['max_age']; }
+  if (isset($_GET['min_weight']) && $_GET['min_weight']!==''){ $andConds[] = 'weight.gte.'.(float)$_GET['min_weight']; }
+  if (isset($_GET['max_weight']) && $_GET['max_weight']!==''){ $andConds[] = 'weight.lte.'.(float)$_GET['max_weight']; }
+  if (isset($_GET['min_price']) && $_GET['min_price']!==''){ $andConds[] = 'price.gte.'.(float)$_GET['min_price']; }
+  if (isset($_GET['max_price']) && $_GET['max_price']!==''){ $andConds[] = 'price.lte.'.(float)$_GET['max_price']; }
+
+  // fetch active listings matching filters
+  $alistParams = array_merge([
+    'select'=>'listing_id,livestock_type,breed',
+    'order'=>'created.desc',
+    'limit'=>1000
+  ], $filters);
+  if (count($andConds)) { $alistParams['and'] = '('.implode(',', $andConds).')'; }
+  [$alist,$alst,$aerr] = sb_rest('GET','activelivestocklisting',$alistParams);
+  if (!($alst>=200 && $alst<300) || !is_array($alist)) $alist = [];
+  $activeIndex = [];
+  foreach ($alist as $arow){ $activeIndex[(int)$arow['listing_id']] = ['type'=>$arow['livestock_type']??'', 'breed'=>$arow['breed']??'']; }
+
+  // active pins (restricted to filtered listing_ids)
+  [$apins,$apst,$aperr] = sb_rest('GET','activelocation_pins',[ 'select'=>'pin_id,location,listing_id,status' ]);
+  if (!($apst>=200 && $apst<300) || !is_array($apins)) $apins = [];
+  $activePins = [];
+  foreach ($apins as $p){
+    $lid = (int)($p['listing_id'] ?? 0);
+    if (!isset($activeIndex[$lid])) continue;
+    list($la,$ln) = parse_loc_pair($p['location'] ?? '');
+    if ($la!==null && $ln!==null){
+      $meta = $activeIndex[$lid];
+      $activePins[] = ['listing_id'=>$lid, 'lat'=>(float)$la, 'lng'=>(float)$ln, 'type'=>$meta['type'], 'breed'=>$meta['breed']];
+    }
+  }
+
+  // sold pins (optional type/breed filter only)
+  $sparams = ['select'=>'listing_id,livestock_type,breed,created'];
+  if (!empty($_GET['livestock_type'])){ $sparams['livestock_type'] = 'eq.'.$_GET['livestock_type']; }
+  if (!empty($_GET['breed'])){ $sparams['breed'] = 'eq.'.$_GET['breed']; }
+  [$slist,$slst,$serr] = sb_rest('GET','soldlivestocklisting',$sparams);
+  if (!($slst>=200 && $slst<300) || !is_array($slist)) $slist = [];
+  $soldIndex = [];
+  foreach ($slist as $srow){ $soldIndex[(int)$srow['listing_id']] = ['type'=>$srow['livestock_type']??'', 'breed'=>$srow['breed']??'']; }
+
+  [$spins,$spst,$sperr] = sb_rest('GET','soldlocation_pins',[ 'select'=>'pin_id,location,listing_id,status' ]);
+  if (!($spst>=200 && $spst<300) || !is_array($spins)) $spins = [];
+  $soldPins = [];
+  foreach ($spins as $p){
+    $lid = (int)($p['listing_id'] ?? 0);
+    if (!empty($_GET['livestock_type']) || !empty($_GET['breed'])){ if (!isset($soldIndex[$lid])) continue; }
+    list($la,$ln) = parse_loc_pair($p['location'] ?? '');
+    if ($la!==null && $ln!==null){
+      $meta = $soldIndex[$lid] ?? ['type'=>'','breed'=>''];
+      $soldPins[] = ['listing_id'=>$lid, 'lat'=>(float)$la, 'lng'=>(float)$ln, 'type'=>$meta['type'], 'breed'=>$meta['breed']];
+    }
+  }
+  header('Content-Type: application/json');
+  echo json_encode([
+    'buyer'=> ['lat'=>$buyerLat, 'lng'=>$buyerLng],
+    'activePins'=>$activePins,
+    'soldPins'=>$soldPins
+  ], JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
 // AJAX data endpoint for infinite scroll
 if (isset($_GET['ajax']) && $_GET['ajax']=='1'){
   $limit = max(1, min(30, (int)($_GET['limit'] ?? 10)));
@@ -106,7 +206,7 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
   <style>
     .filters{display:grid;grid-template-columns:repeat(8,minmax(120px,1fr));gap:8px}
     .feed{display:flex;flex-direction:column;gap:12px;margin-top:12px}
-    .item{display:grid;grid-template-columns:360px 1fr;gap:12px;border:1px solid #e2e8f0;border-radius:8px;padding:8px}
+    .item{display:grid;grid-template-columns:220px 1fr;gap:12px;border:1px solid #e2e8f0;border-radius:8px;padding:8px}
     .imgs{display:flex;gap:8px}
     .imgs img{width:116px;height:116px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0}
     .map-top{height:280px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:12px}
@@ -187,7 +287,7 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
       var feed = document.getElementById('feed');
       var sentinel = document.getElementById('sentinel');
       var topMapEl = document.getElementById('top-map');
-      var map = L.map(topMapEl).setView([8.314209 , 124.859425], 14); 
+      var map = L.map(topMapEl).setView([8.314209 , 124.859425], 12); 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
       var markerLayer = L.layerGroup().addTo(map);
 
@@ -240,13 +340,34 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
         return q.toString();
       }
 
-      function addMarkers(items){
-        items.forEach(function(it){
-          if (it.lat!=null && it.lng!=null){
-            L.marker([it.lat,it.lng]).addTo(markerLayer)
-              .bindPopup('#'+it.listing_id+' • '+it.livestock_type+' • '+it.breed);
-          }
-        });
+      function loadPins(){
+        // pass current filters to pins endpoint
+        var q = new URLSearchParams(currentFilters());
+        q.append('pins','1');
+        fetch('market.php?'+q.toString(), { credentials:'same-origin' })
+          .then(function(r){ return r.json(); })
+          .then(function(data){
+            if (!data) return;
+            markerLayer.clearLayers();
+            // buyer location
+            if (data.buyer && data.buyer.lat!=null && data.buyer.lng!=null){
+              L.circleMarker([data.buyer.lat, data.buyer.lng], { radius:8, color:'#2563eb', fillColor:'#3b82f6', fillOpacity:0.8 }).addTo(markerLayer).bindPopup('You');
+              map.setView([data.buyer.lat, data.buyer.lng], 12);
+            }
+            // active pins (green)
+            (data.activePins||[]).forEach(function(p){
+              var m = L.circleMarker([p.lat, p.lng], { radius:7, color:'#16a34a', fillColor:'#22c55e', fillOpacity:0.9 }).addTo(markerLayer);
+              m.bindTooltip((p.type||'')+' • '+(p.breed||''));
+              m.on('click', function(){ window.location.href = 'viewpost.php?listing_id='+encodeURIComponent(p.listing_id); });
+            });
+            // sold pins (yellow)
+            (data.soldPins||[]).forEach(function(p){
+              var m2 = L.circleMarker([p.lat, p.lng], { radius:7, color:'#f59e0b', fillColor:'#fbbf24', fillOpacity:0.9 }).addTo(markerLayer);
+              m2.bindTooltip((p.type||'')+' • '+(p.breed||''));
+              m2.on('click', function(){ window.location.href = 'viewpost.php?listing_id='+encodeURIComponent(p.listing_id); });
+            });
+          })
+          .catch(function(){});
       }
 
       function renderItems(items){
@@ -307,8 +428,6 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
             var items = (data && data.items) ? data.items : [];
             if (items.length === 0){ state.done = true; return; }
             renderItems(items);
-            addMarkers(items);
-            state.offset += items.length;
           })
           .catch(function(){ /* silently ignore */ })
           .finally(function(){ state.loading = false; });
@@ -322,6 +441,7 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
       document.getElementById('apply').addEventListener('click', function(){
         feed.innerHTML = ''; markerLayer.clearLayers();
         state.offset = 0; state.done = false; loadMore();
+        loadPins();
       });
       document.getElementById('clear').addEventListener('click', function(){
         document.getElementById('f-type').value = '';
@@ -334,9 +454,11 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
         document.getElementById('f-max-weight').value = '';
         feed.innerHTML = ''; markerLayer.clearLayers();
         state.offset = 0; state.done = false; loadMore();
+        loadPins();
       });
 
       // initial load
+      loadPins();
       loadMore();
     })();
   </script>

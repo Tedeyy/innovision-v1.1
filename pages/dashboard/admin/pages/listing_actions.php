@@ -154,6 +154,23 @@ if ($action === 'approve'){
     header('Location: listingmanagement.php');
     exit;
   }
+  // Insert location pin records using seller location and new active listing_id
+  $new_listing_id = null;
+  if (is_array($ar) && isset($ar[0]['listing_id'])){
+    $new_listing_id = (int)$ar[0]['listing_id'];
+  }
+  if ($new_listing_id){
+    // fetch seller location
+    [$sres,$sstatus,$serr] = sb_rest('GET','seller',[ 'select'=>'location', 'user_id'=>'eq.'.((int)$rec['seller_id']), 'limit'=>1 ]);
+    if ($sstatus>=200 && $sstatus<300 && is_array($sres) && isset($sres[0])){
+      $locStr = $sres[0]['location'] ?? null;
+      if ($locStr && $locStr!=='' && $locStr!=='null'){
+        $pinPayload = [[ 'location'=>$locStr, 'listing_id'=>$new_listing_id ]];
+        sb_rest('POST','activelocation_pins',[], $pinPayload, ['Prefer: return=representation']);
+        sb_rest('POST','location_pin_logs',[], $pinPayload, ['Prefer: return=representation']);
+      }
+    }
+  }
   // log action: status Active with admin_id (preserve bat_id if present)
   $logPayload = [[
     'seller_id'=>(int)$rec['seller_id'],
