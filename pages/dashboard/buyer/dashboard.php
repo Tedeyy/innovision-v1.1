@@ -31,16 +31,17 @@ $statusLabel = $isVerified ? 'Verified' : 'Under review';
             </form>
         </div>
         <div class="nav-center" style="display:flex;gap:16px;align-items:center;">
-            <a class="btn" href="pages/market.php">Marketplace</a>
+            <a class="btn" href="pages/interests.php">Interests</a>
             <a class="btn" href="pages/pricewatch.php">Price Watch</a>
             <a class="btn" href="pages/negotiations.php">Negotiations</a>
             <a class="btn" href="pages/purchases.php">Purchases</a>
-            <a class="btn" href="pages/reports.php">Reports</a>
-            <a class="btn" href="pages/batcoordination.php">BAT Coordination</a>
         </div>
         <div class="nav-right">
             <div class="greeting">hello <?php echo htmlspecialchars($firstname, ENT_QUOTES, 'UTF-8'); ?> • <?php echo htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8'); ?></div>
             <a class="btn" href="../logout.php">Logout</a>
+            <a class="notify" href="#" aria-label="Notifications" title="Notifications">
+                <span class="avatar">🔔</span>
+            </a>
             <a class="profile" href="pages/profile.php" aria-label="Profile">
                 <span class="avatar">👤</span>
             </a>
@@ -52,9 +53,7 @@ $statusLabel = $isVerified ? 'Verified' : 'Under review';
                 <h1>Buyer Dashboard</h1>
             </div>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-            <a class="btn" href="pages/market.php">Go to Marketplace</a>
-        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;"></div>
         <div class="card">
             <div style="font-weight:600;margin-bottom:6px;">Your Area</div>
             <div id="map" style="height:260px;border:1px solid #e2e8f0;border-radius:8px"></div>

@@ -12,6 +12,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['action']) && $_POST['ac
   $listing_id = isset($_POST['listing_id']) ? (int)$_POST['listing_id'] : 0;
   $message = isset($_POST['message']) ? trim((string)$_POST['message']) : '';
   if (!$buyer_id || $role!=='buyer' || !$listing_id){ echo json_encode(['ok'=>false]); exit; }
+  // prevent duplicates
+  [$ex,$exs,$exe] = sb_rest('GET','listinginterest',[ 'select'=>'interest_id','buyer_id'=>'eq.'.$buyer_id,'listing_id'=>'eq.'.$listing_id,'limit'=>1 ]);
+  if ($exs>=200 && $exs<300 && is_array($ex) && isset($ex[0])){ echo json_encode(['ok'=>true,'dup'=>true]); exit; }
   $payload = [[ 'listing_id'=>$listing_id, 'buyer_id'=>(int)$buyer_id, 'message'=>$message!==''?$message:null ]];
   sb_rest('POST','listinginterest',[], $payload, ['Prefer: return=representation']);
   sb_rest('POST','listinginterest_log',[], $payload, ['Prefer: return=representation']);
@@ -40,6 +43,9 @@ if (!($lst>=200 && $lst<300) || !is_array($lrows) || !isset($lrows[0])){
 $r = $lrows[0];
 
 // Load seller
+$alreadyInterested = false;
+[$ci,$cis,$cie] = sb_rest('GET','listinginterest',[ 'select'=>'interest_id','buyer_id'=>'eq.'.($_SESSION['user_id'] ?? 0),'listing_id'=>'eq.'.$r['listing_id'],'limit'=>1 ]);
+if ($cis>=200 && $cis<300 && is_array($ci) && isset($ci[0])){ $alreadyInterested = true; }
 $seller = null;
 [$sres,$sstatus,$serr] = sb_rest('GET','seller',[
   'select'=>'user_id,user_fname,user_mname,user_lname,location',
@@ -97,6 +103,12 @@ for ($i=1;$i<=3;$i++){
     .lightbox img{max-width:90vw;max-height:90vh;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,.5);cursor:zoom-out}
     .cta{display:flex;justify-content:center}
     .cta .btn{font-size:18px;padding:14px 22px}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:1100}
+    .modal .content{background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);width:90%;max-width:520px;padding:16px}
+    .modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+    .quick{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+    .quick button{padding:6px 10px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer}
+    .modal textarea{width:100%;min-height:100px;padding:10px;border:1px solid #e2e8f0;border-radius:8px;resize:vertical}
   </style>
 </head>
 <body>
@@ -136,22 +148,52 @@ for ($i=1;$i<=3;$i++){
     </div>
 
     <div class="card cta">
-      <button id="interestBtn" class="btn" style="min-width:280px;">👀 I'm Interested</button>
+      <button id="interestBtn" class="btn" style="min-width:280px;" <?php echo $alreadyInterested? 'disabled' : ''; ?>><?php echo $alreadyInterested? "Interested ✓" : "👀 I'm Interested"; ?></button>
+    </div>
+    <div id="interestModal" class="modal" role="dialog" aria-modal="true">
+      <div class="content">
+        <div style="font-weight:600;margin-bottom:8px;">Send interest (optional message)</div>
+        <label for="interestMsg" style="display:block;color:#4a5568;margin-bottom:6px;">Message to seller (optional)</label>
+        <div class="quick">
+          <button type="button" class="qmsg" data-text="Hi, I'm interested. Is this still available?">Still available?</button>
+          <button type="button" class="qmsg" data-text="Hi, can we negotiate the price?">Negotiate price</button>
+          <button type="button" class="qmsg" data-text="Hi, could you share more photos or details?">More photos/details</button>
+          <button type="button" class="qmsg" data-text="Is delivery available?">Delivery available?</button>
+          <button type="button" class="qmsg" data-text="When is the earliest pickup date?">Earliest pickup?</button>
+        </div>
+        <textarea id="interestMsg" placeholder="Write a message to the seller (optional)..."></textarea>
+        <div class="actions">
+          <button id="cancelInterest" class="btn" style="background:#718096;">Cancel</button>
+          <button id="sendInterest" class="btn">Send Interest</button>
+        </div>
+      </div>
     </div>
   </div>
   <script>
     (function(){
       var btn = document.getElementById('interestBtn');
-      if (btn){
-        btn.addEventListener('click', function(){
-          var msg = prompt('Optional message to seller:');
+      var modal = document.getElementById('interestModal');
+      var sendBtn = document.getElementById('sendInterest');
+      var cancelBtn = document.getElementById('cancelInterest');
+      var msgEl = document.getElementById('interestMsg');
+      function openModal(){ modal.style.display='flex'; msgEl.value=''; msgEl.focus(); }
+      function closeModal(){ modal.style.display='none'; }
+      if (btn && !btn.disabled){ btn.addEventListener('click', openModal); }
+      if (cancelBtn){ cancelBtn.addEventListener('click', function(){ closeModal(); }); }
+      // quick presets
+      Array.prototype.forEach.call(document.querySelectorAll('.qmsg'), function(b){
+        b.addEventListener('click', function(){ msgEl.value = b.getAttribute('data-text') || ''; msgEl.focus(); });
+      });
+      if (sendBtn){
+        sendBtn.addEventListener('click', function(){
           var fd = new FormData();
           fd.append('action','interest');
           fd.append('listing_id','<?php echo (int)$r['listing_id']; ?>');
-          if (msg!=null) fd.append('message', msg);
+          var msg = msgEl.value || '';
+          if (msg !== '') fd.append('message', msg);
           fetch('viewpost.php', { method:'POST', body: fd, credentials:'same-origin' })
             .then(function(r){ return r.json(); })
-            .then(function(res){ if (res && res.ok) { btn.textContent='Interested ✓'; btn.disabled=true; } });
+            .then(function(res){ if (res && res.ok) { btn.textContent='Interested ✓'; btn.disabled=true; closeModal(); } });
         });
       }
       // Map init

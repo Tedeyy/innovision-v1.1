@@ -51,6 +51,9 @@ if ($logSt>=200 && $logSt<300 && is_array($logRows)) { $logs = $logRows; }
         <div class="nav-right">
             <div class="greeting">hello <?php echo htmlspecialchars($firstname, ENT_QUOTES, 'UTF-8'); ?></div>
             <a class="btn" href="../logout.php">Logout</a>
+            <a class="notify" href="#" aria-label="Notifications" title="Notifications">
+                <span class="avatar">🔔</span>
+            </a>
             <a class="profile" href="pages/profile.php" aria-label="Profile">
                 <span class="avatar">👤</span>
             </a>

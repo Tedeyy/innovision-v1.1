@@ -54,9 +54,16 @@ if ($sellerId){
                 <input type="search" name="q" placeholder="Search" />
             </form>
         </div>
+        <div class="nav-center" style="display:flex;gap:16px;align-items:center;">
+            <a class="btn" href="pages/pricewatch.php">Price Watch</a>
+            <a class="btn" href="pages/userreport.php">User Report</a>
+        </div>
         <div class="nav-right">
             <div class="greeting">hello <?php echo htmlspecialchars($firstname, ENT_QUOTES, 'UTF-8'); ?> • <?php echo htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8'); ?></div>
             <a class="btn" href="../logout.php">Logout</a>
+            <a class="notify" href="#" aria-label="Notifications" title="Notifications">
+                <span class="avatar">🔔</span>
+            </a>
             <a class="profile" href="pages/profile.php" aria-label="Profile">
                 <span class="avatar">👤</span>
             </a>
@@ -92,8 +99,12 @@ if ($sellerId){
                         <div style="font-size:20px;font-weight:600;"><?php echo (int)$deniedCount; ?></div>
                     </div>
                 </div>
-                <a class="btn" href="pages/managelistings.php">Manage Listings</a>
+                
             </div>
+        </div>
+        <div class="card">
+            <h3 style="margin-top:0">Manage Listings</h3>
+            <iframe src="pages/managelistings.php" style="width:100%;height:80vh;border:1px solid #e2e8f0;border-radius:8px;" loading="lazy"></iframe>
         </div>
 
         <div class="card">
