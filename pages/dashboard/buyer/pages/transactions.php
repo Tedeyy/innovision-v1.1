@@ -11,12 +11,27 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
 if (isset($_GET['action']) && $_GET['action']==='list'){
   header('Content-Type: application/json');
-  [$rows,$st,$err] = sb_rest('GET','starttransactions',[
+  // Fetch from three tables where current user is the buyer
+  [$srows,$sst,$sse] = sb_rest('GET','starttransactions',[
     'select'=>'transaction_id,listing_id,seller_id,buyer_id,status,started_at,buyer:buyer(user_id,user_fname,user_mname,user_lname,email,contact,location),seller:seller(user_id,user_fname,user_mname,user_lname,email,contact,location),listing:activelivestocklisting(listing_id,livestock_type,breed,price,created,address)',
     'buyer_id'=>'eq.'.$buyerId,
     'order'=>'started_at.desc'
   ]);
-  if (!($st>=200 && $st<300) || !is_array($rows)) $rows = [];
+  if (!($sst>=200 && $sst<300) || !is_array($srows)) $srows = [];
+  [$orows,$ost,$ose] = sb_rest('GET','ongoingtransactions',[
+    'select'=>'transaction_id,listing_id,seller_id,buyer_id,status,started_at,buyer:buyer(user_id,user_fname,user_mname,user_lname,email,contact,location),seller:seller(user_id,user_fname,user_mname,user_lname,email,contact,location),listing:activelivestocklisting(listing_id,livestock_type,breed,price,created,address)',
+    'buyer_id'=>'eq.'.$buyerId,
+    'order'=>'started_at.desc'
+  ]);
+  if (!($ost>=200 && $ost<300) || !is_array($orows)) $orows = [];
+  [$crows,$cst,$cse] = sb_rest('GET','completedtransactions',[
+    'select'=>'transaction_id,listing_id,seller_id,buyer_id,status,started_at,buyer:buyer(user_id,user_fname,user_mname,user_lname,email,contact,location),seller:seller(user_id,user_fname,user_mname,user_lname,email,contact,location),listing:activelivestocklisting(listing_id,livestock_type,breed,price,created,address)',
+    'buyer_id'=>'eq.'.$buyerId,
+    'order'=>'started_at.desc'
+  ]);
+  if (!($cst>=200 && $cst<300) || !is_array($crows)) $crows = [];
+  $rows = array_merge($srows, $orows, $crows);
+  // Map rows to include thumbnails and seller location
   $out = [];
   foreach ($rows as $r){
     $seller = $r['seller'] ?? [];
@@ -66,6 +81,11 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
     .table th,.table td{padding:8px;text-align:left}
     .table thead tr{border-bottom:1px solid #e2e8f0}
     .close-btn{background:#e53e3e;color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}
+    .badge-started{background:#ebf5ff;color:#1e40af;border:1px solid #bfdbfe}
+    .badge-ongoing{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
+    .badge-completed{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+    .badge-default{background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}
   </style>
 </head>
 <body>
@@ -113,6 +133,13 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
       $all('.close-btn').forEach(function(b){ b.addEventListener('click', function(){ closeModal(b.getAttribute('data-close')); }); });
 
       function fullname(p){ if (!p) return ''; var f=p.user_fname||'', m=p.user_mname||'', l=p.user_lname||''; return (f+' '+(m?m+' ':'')+l).trim(); }
+      function statusBadge(s){
+        var t=(s||'').toLowerCase();
+        if (t==='started') return '<span class="badge badge-started">Started</span>';
+        if (t==='ongoing') return '<span class="badge badge-ongoing">Ongoing</span>';
+        if (t==='completed') return '<span class="badge badge-completed">Completed</span>';
+        return '<span class="badge badge-default">'+(s||'')+'</span>';
+      }
       function load(){
         fetch('transactions.php?action=list', { credentials:'same-origin' })
           .then(function(r){ return r.json(); })
@@ -125,7 +152,7 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
               tr.innerHTML = '<td>'+ (row.transaction_id||'') +'</td>'+
                 '<td>'+ fullname(seller) +'</td>'+
                 '<td>'+(listing.livestock_type||'')+' • '+(listing.breed||'')+'</td>'+
-                '<td>'+(row.status||'')+'</td>'+
+                '<td>'+ statusBadge(row.status) +'</td>'+
                 '<td>'+(row.started_at||'')+'</td>'+
                 '<td><button class="btn btn-show" data-row="'+encodeURIComponent(JSON.stringify(row))+'">Show</button></td>';
               tb.appendChild(tr);

@@ -13,17 +13,26 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
 if (isset($_GET['action']) && $_GET['action']==='list'){
   header('Content-Type: application/json');
-  [$rows,$st,$err] = sb_rest('GET','starttransactions',[
+  // Fetch from all three transaction tables for current user (as seller or buyer)
+  [$srows,$st,$err] = sb_rest('GET','starttransactions',[
     'select'=>'transaction_id,listing_id,seller_id,buyer_id,status,started_at,buyer:buyer(user_id,user_fname,user_mname,user_lname,email,contact,location),seller:seller(user_id,user_fname,user_mname,user_lname,email,contact,location),listing:activelivestocklisting(listing_id,livestock_type,breed,price,created,address)',
     'or'=>'(seller_id.eq.'.$userId.',buyer_id.eq.'.$userId.')',
     'order'=>'started_at.desc'
   ]);
-  if (!($st>=200 && $st<300)){
-    $detail = is_string($err)? $err : '';
-    echo json_encode(['ok'=>false,'code'=>$st,'detail'=>$detail]);
-    exit;
-  }
-  if (!is_array($rows)) $rows = [];
+  if (!($st>=200 && $st<300) || !is_array($srows)) $srows = [];
+  [$orows,$ost,$oerr] = sb_rest('GET','ongoingtransactions',[
+    'select'=>'transaction_id,listing_id,seller_id,buyer_id,status,started_at,buyer:buyer(user_id,user_fname,user_mname,user_lname,email,contact,location),seller:seller(user_id,user_fname,user_mname,user_lname,email,contact,location),listing:activelivestocklisting(listing_id,livestock_type,breed,price,created,address)',
+    'or'=>'(seller_id.eq.'.$userId.',buyer_id.eq.'.$userId.')',
+    'order'=>'started_at.desc'
+  ]);
+  if (!($ost>=200 && $ost<300) || !is_array($orows)) $orows = [];
+  [$crows,$cst,$cerr] = sb_rest('GET','completedtransactions',[
+    'select'=>'transaction_id,listing_id,seller_id,buyer_id,status,started_at,buyer:buyer(user_id,user_fname,user_mname,user_lname,email,contact,location),seller:seller(user_id,user_fname,user_mname,user_lname,email,contact,location),listing:activelivestocklisting(listing_id,livestock_type,breed,price,created,address)',
+    'or'=>'(seller_id.eq.'.$userId.',buyer_id.eq.'.$userId.')',
+    'order'=>'started_at.desc'
+  ]);
+  if (!($cst>=200 && $cst<300) || !is_array($crows)) $crows = [];
+  $rows = array_merge($srows, $orows, $crows);
   $out = [];
   foreach ($rows as $r){
     $sellerRow = $r['seller'] ?? [];
@@ -56,6 +65,60 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
   echo json_encode(['ok'=>true,'count'=>count($out),'data'=>$out]);
   exit;
 }
+if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
+  header('Content-Type: application/json');
+  $listingId = isset($_POST['listing_id']) ? (int)$_POST['listing_id'] : 0;
+  $sellerIdIn = isset($_POST['seller_id']) ? (int)$_POST['seller_id'] : 0;
+  $buyerIdIn = isset($_POST['buyer_id']) ? (int)$_POST['buyer_id'] : 0;
+  // Seller does not set date/time/location; BAT will handle later
+  if (!$listingId || !$sellerIdIn || !$buyerIdIn){
+    echo json_encode(['ok'=>false,'error'=>'missing_params']);
+    exit;
+  }
+  $payload = [[
+    'listing_id'=>$listingId,
+    'seller_id'=>$sellerIdIn,
+    'buyer_id'=>$buyerIdIn,
+    'status'=>'Ongoing',
+    'started_at'=>date('c'),
+    // date/time/location will be set by BAT later
+  ]];
+  [$ores,$ost,$oerr] = sb_rest('POST','ongoingtransactions',[], $payload, ['Prefer: return=representation']);
+  if (!($ost>=200 && $ost<300)){
+    $detail = '';
+    if (is_array($ores) && isset($ores['message'])) { $detail = $ores['message']; }
+    elseif (is_string($ores) && $ores!=='') { $detail = $ores; }
+    echo json_encode(['ok'=>false,'error'=>'ongoing_insert_failed','code'=>$ost,'detail'=>$detail]);
+    exit;
+  }
+  // Update starttransactions status to 'Ongoing' for the matching row
+  $upd = [ 'status'=>'Ongoing' ];
+  [$ur,$us,$ue] = sb_rest('PATCH','starttransactions', [
+    'listing_id'=>'eq.'.$listingId,
+    'seller_id'=>'eq.'.$sellerIdIn,
+    'buyer_id'=>'eq.'.$buyerIdIn
+  ], [$upd]);
+  $warning2 = null;
+  if (!($us>=200 && $us<300)){
+    $warning2 = 'Failed to update starttransactions to Ongoing';
+  }
+  $logPayload = [[
+    'listing_id'=>$listingId,
+    'seller_id'=>$sellerIdIn,
+    'buyer_id'=>$buyerIdIn,
+    'status'=>'Ongoing'
+  ]];
+  [$lr,$ls,$le] = sb_rest('POST','transactions_logs',[], $logPayload, ['Prefer: return=representation']);
+  $warning = null;
+  if (!($ls>=200 && $ls<300)){
+    $ldetail = '';
+    if (is_array($lr) && isset($lr['message'])) { $ldetail = $lr['message']; }
+    elseif (is_string($lr) && $lr!=='') { $ldetail = $lr; }
+    $warning = 'Log insert failed (code '.(string)$ls.'). '.($ldetail?:'');
+  }
+  echo json_encode(['ok'=>true,'data'=>$ores[0] ?? null, 'warning'=>$warning, 'warning2'=>$warning2]);
+  exit;
+}
 
 ?><!DOCTYPE html>
 <html lang="en">
@@ -75,6 +138,11 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
     .table th,.table td{padding:8px;text-align:left}
     .table thead tr{border-bottom:1px solid #e2e8f0}
     .close-btn{background:#e53e3e;color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}
+    .badge-started{background:#ebf5ff;color:#1e40af;border:1px solid #bfdbfe}
+    .badge-ongoing{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
+    .badge-completed{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+    .badge-default{background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}
   </style>
 </head>
 <body>
@@ -122,6 +190,13 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
       $all('.close-btn').forEach(function(b){ b.addEventListener('click', function(){ closeModal(b.getAttribute('data-close')); }); });
 
       function fullname(p){ if (!p) return ''; var f=p.user_fname||'', m=p.user_mname||'', l=p.user_lname||''; return (f+' '+(m?m+' ':'')+l).trim(); }
+      function statusBadge(s){
+        var t=(s||'').toLowerCase();
+        if (t==='started') return '<span class="badge badge-started">Started</span>';
+        if (t==='ongoing') return '<span class="badge badge-ongoing">Ongoing</span>';
+        if (t==='completed') return '<span class="badge badge-completed">Completed</span>';
+        return '<span class="badge badge-default">'+(s||'')+'</span>';
+      }
       function load(){
         fetch('transactions.php?action=list', { credentials:'same-origin' })
           .then(function(r){ return r.json(); })
@@ -145,7 +220,7 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
               tr.innerHTML = '<td>'+ (row.transaction_id||'') +'</td>'+
                 '<td>'+ counterparty +'</td>'+
                 '<td>'+(listing.livestock_type||'')+' • '+(listing.breed||'')+'</td>'+
-                '<td>'+(row.status||'')+'</td>'+
+                '<td>'+ statusBadge(row.status) +'</td>'+
                 '<td>'+(row.started_at||'')+'</td>'+
                 '<td><button class="btn btn-show" data-row="'+encodeURIComponent(JSON.stringify(row))+'">Show</button></td>';
               tb.appendChild(tr);
@@ -181,7 +256,9 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
             '<h3 style="margin-top:10px;">Buyer</h3>'+
             '<div style="display:flex;gap:10px;align-items:flex-start;">'+ avatarHTML(buyer) +
               '<div><div><strong>'+fullname(buyer)+'</strong></div><div>Email: '+(buyer.email||'')+'</div><div>Contact: '+(buyer.contact||'')+'</div></div>'+
-            '</div>';
+            '</div>'+
+            '<div style="margin-top:14px;color:#4a5568;">Note: Only schedule meet-up after having them to contact the seller to avoid bogus transactions</div>'+
+            '<div style="margin-top:8px;"><button class="btn" id="btnMeetup">Schedule Meet-Up</button></div>';
           var wrap = document.getElementById('imgWrap'); if (wrap) wrap.appendChild(img);
           // Map
           setTimeout(function(){
@@ -194,6 +271,32 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
             }
           }, 0);
           openModal('txModal');
+          var btnM = document.getElementById('btnMeetup');
+          if (btnM){
+            btnM.addEventListener('click', function(){
+              var fd = new FormData();
+              fd.append('action','schedule_meetup');
+              fd.append('listing_id', (listing.listing_id||''));
+              fd.append('seller_id', (data.seller_id||''));
+              fd.append('buyer_id', (data.buyer_id||''));
+              btnM.disabled = true; btnM.textContent = 'Scheduling...';
+              fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
+                .then(function(r){ return r.json(); })
+                .then(function(res){
+                  if (!res || res.ok===false){
+                    alert('Failed to schedule meet-up'+(res && res.code? (' (code '+res.code+')') : ''));
+                    btnM.disabled = false; btnM.textContent = 'Schedule Meet-Up';
+                  } else {
+                    var msg = 'Meet-up scheduled.';
+                    if (res.warning){ msg += '\n' + res.warning; }
+                    if (res.warning2){ msg += '\n' + res.warning2; }
+                    alert(msg);
+                    btnM.disabled = true; btnM.textContent = 'Scheduled';
+                  }
+                })
+                .catch(function(){ btnM.disabled = false; btnM.textContent = 'Schedule Meet-Up'; });
+            });
+          }
         }
       });
 
