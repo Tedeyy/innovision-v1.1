@@ -9,6 +9,27 @@ if (($_SESSION['role'] ?? '') !== 'buyer'){
 $buyerId = (int)($_SESSION['user_id'] ?? 0);
 function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
+// Handle rating submission from buyer
+if (isset($_POST['action']) && $_POST['action']==='rate_seller'){
+  header('Content-Type: application/json');
+  $sellerId = (int)($_POST['seller_id'] ?? 0);
+  $buyerIdIn = (int)($_POST['buyer_id'] ?? 0);
+  $txId = (int)($_POST['transaction_id'] ?? 0);
+  $rating = (float)($_POST['rating'] ?? 0);
+  $desc = trim((string)($_POST['description'] ?? ''));
+  if ($buyerIdIn !== $buyerId){ echo json_encode(['ok'=>false,'error'=>'unauthorized']); exit; }
+  if ($sellerId<=0 || $buyerIdIn<=0 || $txId<=0 || $rating<1 || $rating>5){ echo json_encode(['ok'=>false,'error'=>'invalid_params']); exit; }
+  $payload = [[ 'buyer_id'=>$buyerIdIn, 'seller_id'=>$sellerId, 'transaction_id'=>$txId, 'rating'=>$rating, 'description'=>$desc ]];
+  [$res,$st,$err] = sb_rest('POST','userrating',[], $payload, ['Prefer: return=representation']);
+  if (!($st>=200 && $st<300)){
+    $detail = is_array($res) && isset($res['message']) ? $res['message'] : (is_string($res)?$res:'');
+    echo json_encode(['ok'=>false,'error'=>'insert_failed','code'=>$st,'detail'=>$detail]);
+    exit;
+  }
+  echo json_encode(['ok'=>true]);
+  exit;
+}
+
 if (isset($_GET['action']) && $_GET['action']==='list'){
   header('Content-Type: application/json');
   // Fetch from three tables where current user is the buyer
@@ -124,6 +145,30 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
     </div>
   </div>
 
+  <div id="rateModal" class="modal">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <h2 style="margin:0;">Rate Seller</h2>
+        <button class="close-btn" data-close="rateModal">Close</button>
+      </div>
+      <div style="margin-top:8px;">
+        <div class="subtle" style="margin-bottom:8px;">Please rate your experience with this seller.</div>
+        <div id="rateStars" style="font-size:28px;color:#e2e8f0;cursor:pointer;user-select:none;">
+          <span data-v="1">★</span>
+          <span data-v="2">★</span>
+          <span data-v="3">★</span>
+          <span data-v="4">★</span>
+          <span data-v="5">★</span>
+        </div>
+        <textarea id="rateDesc" placeholder="Optional description (max 255 chars)" maxlength="255" style="margin-top:10px;width:100%;min-height:90px;padding:10px;border:1px solid #e2e8f0;border-radius:8px;"></textarea>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+          <button class="btn" id="btnSubmitRating">Submit Rating</button>
+          <span class="subtle" id="rateMsg"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     (function(){
       function $(s){ return document.querySelector(s); }
@@ -188,7 +233,9 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
             '<h3 style="margin-top:10px;">Buyer</h3>'+
             '<div style="display:flex;gap:10px;align-items:flex-start;">'+ avatarHTML(buyer) +
               '<div><div><strong>'+fullname(buyer)+'</strong></div><div>Email: '+(buyer.email||'')+'</div><div>Contact: '+(buyer.contact||'')+'</div></div>'+
-            '</div>';
+            '</div>'+
+            // actions if completed
+            ((String(data.status||'').toLowerCase()==='completed') ? '<div style="margin-top:10px;"><button class="btn" id="btnRateSeller">Rate Seller</button></div>' : '');
           var wrap = document.getElementById('imgWrap'); if (wrap) wrap.appendChild(img);
           setTimeout(function(){
             var mEl = document.getElementById('txMap'); if (!mEl || !window.L) return;
@@ -200,10 +247,69 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
             }
           }, 0);
           openModal('txModal');
+          // Rating button handler
+          var rb = document.getElementById('btnRateSeller');
+          if (rb){
+            rb.addEventListener('click', function(){
+              var rm = document.getElementById('rateModal');
+              rm.setAttribute('data-seller', String(data.seller_id||''));
+              rm.setAttribute('data-transaction', String(data.transaction_id||''));
+              openModal('rateModal');
+            });
+          }
         }
       });
 
-      ['txModal'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.addEventListener('click', function(ev){ if(ev.target===el) closeModal(id); }); }});
+      ['txModal','rateModal'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.addEventListener('click', function(ev){ if(ev.target===el) closeModal(id); }); }});
+
+      // Star rating interactions
+      var currentRating = 5;
+      function paintStars(n){
+        var stars = document.querySelectorAll('#rateStars span');
+        Array.prototype.forEach.call(stars, function(s){
+          var v = parseInt(s.getAttribute('data-v'),10);
+          s.style.color = (v<=n)? '#f59e0b' : '#e2e8f0';
+        });
+      }
+      paintStars(currentRating);
+      var starsWrap = document.getElementById('rateStars');
+      if (starsWrap){
+        starsWrap.addEventListener('click', function(e){
+          var v = parseInt(e.target.getAttribute('data-v'),10);
+          if (!isNaN(v)) { currentRating = v; paintStars(currentRating); }
+        });
+      }
+
+      // Submit rating
+      var btnSubmitRating = document.getElementById('btnSubmitRating');
+      if (btnSubmitRating){
+        btnSubmitRating.addEventListener('click', function(){
+          var rm = document.getElementById('rateModal');
+          var sellerId = parseInt(rm.getAttribute('data-seller')||'0',10) || 0;
+          var txId = parseInt(rm.getAttribute('data-transaction')||'0',10) || 0;
+          if (!(currentRating>=1 && currentRating<=5)) { alert('Rating must be 1-5'); return; }
+          var fd = new FormData();
+          fd.append('action','rate_seller');
+          fd.append('buyer_id','<?php echo (int)$buyerId; ?>');
+          fd.append('seller_id', String(sellerId));
+          fd.append('transaction_id', String(txId));
+          fd.append('rating', String(currentRating));
+          fd.append('description', (document.getElementById('rateDesc')||{}).value||'');
+          btnSubmitRating.disabled = true; btnSubmitRating.textContent = 'Submitting...';
+          fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(res){
+              if (!res || res.ok===false){
+                alert('Failed to submit rating'+(res && res.code? (' (code '+res.code+')') : ''));
+                btnSubmitRating.disabled = false; btnSubmitRating.textContent = 'Submit Rating';
+              } else {
+                btnSubmitRating.textContent = 'Thanks!';
+                setTimeout(function(){ closeModal('rateModal'); closeModal('txModal'); }, 600);
+              }
+            })
+            .catch(function(){ btnSubmitRating.disabled = false; btnSubmitRating.textContent = 'Submit Rating'; });
+        });
+      }
     })();
   </script>
 </body>
