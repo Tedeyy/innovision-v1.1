@@ -9,26 +9,181 @@ if ($userId === 0){
   header('Location: ../dashboard.php');
   exit;
 }
+
+if (isset($_POST['action']) && $_POST['action']==='complete_transaction'){
+  header('Content-Type: application/json');
+  $txId = isset($_POST['transaction_id']) ? (int)$_POST['transaction_id'] : 0;
+  $listingId = isset($_POST['listing_id']) ? (int)$_POST['listing_id'] : 0;
+  $sellerIdIn = isset($_POST['seller_id']) ? (int)$_POST['seller_id'] : 0;
+  $buyerIdIn = isset($_POST['buyer_id']) ? (int)$_POST['buyer_id'] : 0;
+  $result = isset($_POST['result']) ? (string)$_POST['result'] : 'successful';
+  $price = isset($_POST['price']) ? (float)$_POST['price'] : 0.0;
+  $payment = isset($_POST['payment_method']) ? (string)$_POST['payment_method'] : '';
+  if (!$listingId || !$sellerIdIn || !$buyerIdIn || $price<=0 || $payment===''){
+    echo json_encode(['ok'=>false,'error'=>'missing_params']);
+    exit;
+  }
+  // fetch ongoing for details (bat_id, dates, location)
+  $ongo = null;
+  if ($txId){
+    [$og,$ogs,$oge] = sb_rest('GET','ongoingtransactions',[ 'select'=>'*', 'transaction_id'=>'eq.'.$txId, 'limit'=>1 ]);
+    if ($ogs>=200 && $ogs<300 && is_array($og) && isset($og[0])) $ongo = $og[0];
+  }
+  if (!$ongo){
+    [$og,$ogs,$oge] = sb_rest('GET','ongoingtransactions',[ 'select'=>'*', 'listing_id'=>'eq.'.$listingId, 'seller_id'=>'eq.'.$sellerIdIn, 'buyer_id'=>'eq.'.$buyerIdIn, 'limit'=>1 ]);
+    if ($ogs>=200 && $ogs<300 && is_array($og) && isset($og[0])) $ongo = $og[0];
+  }
+  $started_at = $ongo['started_at'] ?? date('c');
+  $bat_id = $ongo['bat_id'] ?? null;
+  $when = $ongo['transaction_date'] ?? null;
+  $loc  = $ongo['transaction_location'] ?? null;
+  // insert completedtransactions
+  $compPayload = [[
+    'listing_id'=>$listingId,
+    'seller_id'=>$sellerIdIn,
+    'buyer_id'=>$buyerIdIn,
+    'status'=>'Completed',
+    'started_at'=>$started_at,
+    'bat_id'=>$bat_id,
+    'transaction_date'=>$when,
+    'transaction_location'=>$loc
+  ]];
+  [$cres,$cst,$cerr] = sb_rest('POST','completedtransactions',[], $compPayload, ['Prefer: return=representation']);
+  if (!($cst>=200 && $cst<300) || !is_array($cres) || !isset($cres[0])){
+    $detail = is_array($cres) && isset($cres['message']) ? $cres['message'] : (is_string($cres)?$cres:'');
+    echo json_encode(['ok'=>false,'error'=>'completed_insert_failed','code'=>$cst,'detail'=>$detail]);
+    exit;
+  }
+  $completed = $cres[0];
+  $completedTxId = (int)($completed['transaction_id'] ?? 0);
+  // transactions_logs
+  $logPayload = [[
+    'listing_id'=>$listingId,
+    'seller_id'=>$sellerIdIn,
+    'buyer_id'=>$buyerIdIn,
+    'status'=>'Completed',
+    'started_at'=>$started_at,
+    'bat_id'=>$bat_id,
+    'transaction_date'=>$when,
+    'transaction_location'=>$loc,
+    'completed_transaction'=>date('c')
+  ]];
+  [$lr,$ls,$le] = sb_rest('POST','transactions_logs',[], $logPayload, ['Prefer: return=representation']);
+  $warnings = [];
+  if (!($ls>=200 && $ls<300)) $warnings[] = 'Failed to write transactions_logs';
+
+  // delete ongoing row (if existed)
+  if ($ongo && isset($ongo['transaction_id'])){
+    [$dr,$ds,$de] = sb_rest('DELETE','ongoingtransactions',[ 'transaction_id'=>'eq.'.$ongo['transaction_id'] ]);
+    if (!($ds>=200 && $ds<300)) $warnings[] = 'Failed to remove ongoing transaction';
+  }
+
+  // remove listing interests regardless of result
+  [$ir,$is,$ie] = sb_rest('DELETE','listinginterest',[ 'listing_id'=>'eq.'.$listingId ]);
+  if (!($is>=200 && $is<300)) $warnings[] = 'Failed to clear listing interests';
+
+  if ($result==='successful'){
+    // fetch listing details
+    [$lrow,$lst,$ler] = sb_rest('GET','activelivestocklisting',[ 'select'=>'*', 'listing_id'=>'eq.'.$listingId, 'limit'=>1 ]);
+    $listing = ($lst>=200 && $lst<300 && is_array($lrow) && isset($lrow[0])) ? $lrow[0] : [];
+    // insert soldlivestocklisting
+    $soldPayload = [[
+      'listing_id'=>$listingId,
+      'seller_id'=>$sellerIdIn,
+      'livestock_type'=>$listing['livestock_type'] ?? null,
+      'breed'=>$listing['breed'] ?? null,
+      'address'=>$listing['address'] ?? '',
+      'age'=>$listing['age'] ?? 0,
+      'weight'=>$listing['weight'] ?? 0,
+      'price'=>$listing['price'] ?? 0,
+      'soldprice'=>$price,
+      'status'=>'Sold'
+    ]];
+    [$sr,$ss,$se] = sb_rest('POST','soldlivestocklisting',[], $soldPayload, ['Prefer: return=representation']);
+    if (!($ss>=200 && $ss<300)) $warnings[] = 'Failed to create sold listing';
+    // logs for listing
+    $llogPayload = [[
+      'listing_id'=>$listingId,
+      'seller_id'=>$sellerIdIn,
+      'livestock_type'=>$listing['livestock_type'] ?? '',
+      'breed'=>$listing['breed'] ?? '',
+      'address'=>$listing['address'] ?? '',
+      'age'=>$listing['age'] ?? 0,
+      'weight'=>$listing['weight'] ?? 0,
+      'price'=>$listing['price'] ?? 0,
+      'status'=>'Sold',
+      'bat_id'=>$bat_id
+    ]];
+    [$llr,$lls,$lle] = sb_rest('POST','livestocklisting_logs',[], $llogPayload, ['Prefer: return=representation']);
+    if (!($lls>=200 && $lls<300)) $warnings[] = 'Failed to write livestock listing logs';
+    // move pins from activelocation_pins to soldlocation_pins and logs
+    [$pr,$ps,$pe] = sb_rest('GET','activelocation_pins',[ 'select'=>'*', 'listing_id'=>'eq.'.$listingId ]);
+    if ($ps>=200 && $ps<300 && is_array($pr)){
+      foreach ($pr as $pin){
+        $pinPayload = [[ 'location'=>$pin['location'] ?? '', 'listing_id'=>$listingId, 'status'=>'Sold' ]];
+        sb_rest('POST','soldlocation_pins',[], $pinPayload, ['Prefer: return=representation']);
+        $plogPayload = [[ 'location'=>$pin['location'] ?? '', 'listing_id'=>$listingId, 'status'=>'Sold' ]];
+        sb_rest('POST','location_pin_logs',[], $plogPayload, ['Prefer: return=representation']);
+      }
+      sb_rest('DELETE','activelocation_pins',[ 'listing_id'=>'eq.'.$listingId ]);
+    }
+    // successfultransactions
+    $succPayload = [[
+      'transaction_id'=>$completedTxId,
+      'listing_id'=>$listingId,
+      'seller_id'=>$sellerIdIn,
+      'buyer_id'=>$buyerIdIn,
+      'price'=>$price,
+      'payment_method'=>$payment,
+      'status'=>'Successful',
+      'transaction_date'=>date('c')
+    ]];
+    [$sr2,$ss2,$se2] = sb_rest('POST','successfultransactions',[], $succPayload, ['Prefer: return=representation']);
+    if (!($ss2>=200 && $ss2<300)) $warnings[] = 'Failed to create successfultransactions record';
+    // remove from active listings
+    [$delA,$delAs,$delAe] = sb_rest('DELETE','activelivestocklisting',[ 'listing_id'=>'eq.'.$listingId ]);
+    if (!($delAs>=200 && $delAs<300)) $warnings[] = 'Failed to remove active listing';
+  } else {
+    // failedtransactions
+    $failPayload = [[
+      'transaction_id'=>$completedTxId,
+      'listing_id'=>$listingId,
+      'seller_id'=>$sellerIdIn,
+      'buyer_id'=>$buyerIdIn,
+      'price'=>$price,
+      'payment_method'=>$payment,
+      'status'=>'Failed',
+      'transaction_date'=>date('c')
+    ]];
+    [$fr,$fs,$fe] = sb_rest('POST','failedtransactions',[], $failPayload, ['Prefer: return=representation']);
+    if (!($fs>=200 && $fs<300)) $warnings[] = 'Failed to create failedtransactions record';
+  }
+
+  // Documentary photo upload and storage image transfer are not implemented in this endpoint.
+  // Return warnings to inform the caller.
+  echo json_encode(['ok'=>true,'completed_transaction_id'=>$completedTxId,'warnings'=>$warnings]);
+  exit;
+}
 function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
 if (isset($_GET['action']) && $_GET['action']==='list'){
   header('Content-Type: application/json');
-  // Fetch from all three transaction tables for current user (as seller or buyer)
+  // Fetch from all three transaction tables for current user as SELLER only
   [$srows,$st,$err] = sb_rest('GET','starttransactions',[
     'select'=>'transaction_id,listing_id,seller_id,buyer_id,status,started_at,buyer:buyer(user_id,user_fname,user_mname,user_lname,email,contact,location),seller:seller(user_id,user_fname,user_mname,user_lname,email,contact,location),listing:activelivestocklisting(listing_id,livestock_type,breed,price,created,address)',
-    'or'=>'(seller_id.eq.'.$userId.',buyer_id.eq.'.$userId.')',
+    'seller_id'=>'eq.'.$userId,
     'order'=>'started_at.desc'
   ]);
   if (!($st>=200 && $st<300) || !is_array($srows)) $srows = [];
   [$orows,$ost,$oerr] = sb_rest('GET','ongoingtransactions',[
     'select'=>'transaction_id,listing_id,seller_id,buyer_id,status,started_at,buyer:buyer(user_id,user_fname,user_mname,user_lname,email,contact,location),seller:seller(user_id,user_fname,user_mname,user_lname,email,contact,location),listing:activelivestocklisting(listing_id,livestock_type,breed,price,created,address)',
-    'or'=>'(seller_id.eq.'.$userId.',buyer_id.eq.'.$userId.')',
+    'seller_id'=>'eq.'.$userId,
     'order'=>'started_at.desc'
   ]);
   if (!($ost>=200 && $ost<300) || !is_array($orows)) $orows = [];
   [$crows,$cst,$cerr] = sb_rest('GET','completedtransactions',[
     'select'=>'transaction_id,listing_id,seller_id,buyer_id,status,started_at,buyer:buyer(user_id,user_fname,user_mname,user_lname,email,contact,location),seller:seller(user_id,user_fname,user_mname,user_lname,email,contact,location),listing:activelivestocklisting(listing_id,livestock_type,breed,price,created,address)',
-    'or'=>'(seller_id.eq.'.$userId.',buyer_id.eq.'.$userId.')',
+    'seller_id'=>'eq.'.$userId,
     'order'=>'started_at.desc'
   ]);
   if (!($cst>=200 && $cst<300) || !is_array($crows)) $crows = [];
@@ -193,6 +348,39 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
     </div>
   </div>
 
+  <div id="completeModal" class="modal">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <h2 style="margin:0;">Complete Transaction</h2>
+        <button class="close-btn" data-close="completeModal">Close</button>
+      </div>
+      <div style="margin-top:8px;">
+        <div style="display:grid;gap:10px;">
+          <div>
+            <label style="display:block;font-weight:600;margin-bottom:4px;">Result</label>
+            <label style="margin-right:16px;"><input type="radio" name="txResult" value="successful" checked> Successful</label>
+            <label><input type="radio" name="txResult" value="unsuccessful"> Unsuccessful</label>
+          </div>
+          <div>
+            <label style="display:block;font-weight:600;margin-bottom:4px;">Final Price (₱)</label>
+            <input type="number" id="txPrice" step="0.01" min="0" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
+          </div>
+          <div>
+            <label style="display:block;font-weight:600;margin-bottom:4px;">Payment Method</label>
+            <input type="text" id="txPayment" placeholder="e.g. Cash" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
+          </div>
+          <div>
+            <label style="display:block;font-weight:600;margin-bottom:4px;">Documentary Photo (optional if unsuccessful)</label>
+            <input type="file" id="txDoc" accept="image/*" />
+          </div>
+          <div>
+            <button class="btn" id="btnSubmitComplete">Submit</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     (function(){
       function $(s){ return document.querySelector(s); }
@@ -259,9 +447,7 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
               '<div><strong>'+(listing.livestock_type||'')+' • '+(listing.breed||'')+'</strong><div>Price: ₱'+(listing.price||'')+'</div><div>Address: '+(listing.address||'')+'</div><div class="subtle">Listing #'+(listing.listing_id||'')+' • Created '+(listing.created||'')+'</div></div>'+
               '<div id="imgWrap"></div>'+
             '</div>'+
-            '<div style="margin-top:10px;display:grid;grid-template-columns:1fr;gap:8px;">'+
-              '<label>Date & Time <input type="datetime-local" id="meetWhen" required /></label>'+
-              '<label>Location (lat,lng) <input type="text" id="meetLoc" placeholder="Click map or enter lat,lng" /></label>'+
+            '<div style="margin-top:10px;">'+
               '<div id="txMap" style="height:200px;border:1px solid #e2e8f0;border-radius:8px"></div>'+
             '</div>'+
             '<hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0" />'+
@@ -273,10 +459,10 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
             '<div style="display:flex;gap:10px;align-items:flex-start;">'+ avatarHTML(buyer) +
               '<div><div><strong>'+fullname(buyer)+'</strong></div><div>Email: '+(buyer.email||'')+'</div><div>Contact: '+(buyer.contact||'')+'</div></div>'+
             '</div>'+
-            '<div style="margin-top:14px;color:#4a5568;">Note: Only schedule meet-up after having them to contact the seller to avoid bogus transactions</div>'+
-            '<div style="margin-top:8px;"><button class="btn" id="btnMeetup">Schedule Meet-Up</button></div>';
+            '<div style="margin-top:14px;color:#4a5568;">Note: Meet-up date and location will be set by BAT.</div>'+ 
+            '<div style="margin-top:8px;"><button class="btn" id="btnDone">Done</button></div>';
           var wrap = document.getElementById('imgWrap'); if (wrap) wrap.appendChild(img);
-          // Map
+          // Map (read-only)
           setTimeout(function(){
             var mEl = document.getElementById('txMap'); if (!mEl || !window.L) return;
             var map = L.map(mEl).setView([8.314209 , 124.859425], 12);
@@ -286,48 +472,62 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
               map.setView([data.lat, data.lng], 12);
               marker = L.marker([data.lat, data.lng]).addTo(map);
             }
-            map.on('click', function(ev){
-              var lat = ev.latlng.lat.toFixed(6), lng = ev.latlng.lng.toFixed(6);
-              var inp = document.getElementById('meetLoc'); if (inp) inp.value = lat+','+lng;
-              if (marker) { marker.setLatLng(ev.latlng); } else { marker = L.marker(ev.latlng).addTo(map); }
-            });
           }, 0);
           openModal('txModal');
-          var btnM = document.getElementById('btnMeetup');
-          if (btnM){
-            btnM.addEventListener('click', function(){
-              var fd = new FormData();
-              fd.append('action','schedule_meetup');
-              fd.append('listing_id', (listing.listing_id||''));
-              fd.append('seller_id', (data.seller_id||''));
-              fd.append('buyer_id', (data.buyer_id||''));
-              var when = (document.getElementById('meetWhen')||{}).value||'';
-              var loc = (document.getElementById('meetLoc')||{}).value||'';
-              if (!when){ alert('Please select date and time'); return; }
-              fd.append('transaction_date', when);
-              fd.append('transaction_location', loc);
-              btnM.disabled = true; btnM.textContent = 'Scheduling...';
-              fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
-                .then(function(r){ return r.json(); })
-                .then(function(res){
-                  if (!res || res.ok===false){
-                    alert('Failed to schedule meet-up'+(res && res.code? (' (code '+res.code+')') : ''));
-                    btnM.disabled = false; btnM.textContent = 'Schedule Meet-Up';
-                  } else {
-                    var msg = 'Meet-up scheduled.';
-                    if (res.warning){ msg += '\n' + res.warning; }
-                    if (res.warning2){ msg += '\n' + res.warning2; }
-                    alert(msg);
-                    btnM.disabled = true; btnM.textContent = 'Scheduled';
-                  }
-                })
-                .catch(function(){ btnM.disabled = false; btnM.textContent = 'Schedule Meet-Up'; });
+          var doneBtn = document.getElementById('btnDone');
+          if (doneBtn){
+            doneBtn.addEventListener('click', function(){
+              var cm = document.getElementById('completeModal');
+              cm.setAttribute('data-tx', encodeURIComponent(JSON.stringify(data)));
+              openModal('completeModal');
             });
           }
         }
       });
 
-      ['txModal'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.addEventListener('click', function(ev){ if(ev.target===el) closeModal(id); }); }});
+      ['txModal','completeModal'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.addEventListener('click', function(ev){ if(ev.target===el) closeModal(id); }); }});
+
+      var btnSubmitComplete = document.getElementById('btnSubmitComplete');
+      if (btnSubmitComplete){
+        btnSubmitComplete.addEventListener('click', function(){
+          var cm = document.getElementById('completeModal');
+          var raw = cm.getAttribute('data-tx')||'';
+          var tx = {};
+          try{ tx = JSON.parse(decodeURIComponent(raw)); }catch(e){}
+          var result = (document.querySelector('input[name="txResult"]:checked')||{}).value||'successful';
+          var price = (document.getElementById('txPrice')||{}).value||'';
+          var paym  = (document.getElementById('txPayment')||{}).value||'';
+          var file  = (document.getElementById('txDoc')||{}).files ? (document.getElementById('txDoc').files[0]||null) : null;
+          if (!price){ alert('Please enter final price'); return; }
+          if (!paym){ alert('Please enter payment method'); return; }
+          var fd = new FormData();
+          fd.append('action','complete_transaction');
+          fd.append('transaction_id', tx.transaction_id||'');
+          fd.append('listing_id', tx.listing_id||'');
+          fd.append('seller_id', tx.seller_id||'');
+          fd.append('buyer_id', tx.buyer_id||'');
+          fd.append('result', result);
+          fd.append('price', price);
+          fd.append('payment_method', paym);
+          if (file) fd.append('doc_photo', file);
+          btnSubmitComplete.disabled = true; btnSubmitComplete.textContent = 'Submitting...';
+          fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(res){
+              if (!res || res.ok===false){
+                alert('Failed to complete transaction'+(res && res.code? (' (code '+res.code+')') : ''));
+                btnSubmitComplete.disabled = false; btnSubmitComplete.textContent = 'Submit';
+              } else {
+                alert('Transaction completion saved.');
+                btnSubmitComplete.disabled = true; btnSubmitComplete.textContent = 'Saved';
+                closeModal('completeModal');
+                closeModal('txModal');
+                location.reload();
+              }
+            })
+            .catch(function(){ btnSubmitComplete.disabled = false; btnSubmitComplete.textContent = 'Submit'; });
+        });
+      }
     })();
   </script>
 </body>

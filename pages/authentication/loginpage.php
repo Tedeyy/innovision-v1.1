@@ -16,17 +16,17 @@ $cooldown = isset($_GET['cooldown']) ? max(0, (int)$_GET['cooldown']) : 0;
         <form action="login.php" method="post">
             <h2>Login to InnoVision</h2>
             <?php if (isset($_GET['submitted']) && $_GET['submitted'] === '1'): ?>
-            <div class="success-message">
+            <div class="register-link" style="color:#16a34a; font-weight:600; margin:8px 0;">
                 Registration submitted. Please check your email to confirm your account.
             </div>
             <?php endif; ?>
             <?php if ($cooldown > 0): ?>
-            <div class="error-message">
+            <div class="register-link" style="color:#e53e3e; font-weight:600; margin:8px 0;">
                 Too many failed attempts. Please wait <span id="cooldown-secs"><?php echo (int)$cooldown; ?></span> seconds.
             </div>
             <?php endif; ?>
             <?php if (isset($_GET['confirmed']) && $_GET['confirmed'] === '1'): ?>
-            <div class="success-message">
+            <div class="register-link" style="color:#16a34a; font-weight:600; margin:8px 0;">
                 Registration confirmed. You can now log in.
             </div>
             <?php endif; ?>
@@ -44,7 +44,7 @@ $cooldown = isset($_GET['cooldown']) ? max(0, (int)$_GET['cooldown']) : 0;
             <button type="submit" id="login-btn" name="login" value="login">Login</button>
             
             <?php if (!empty($error)): ?>
-            <div class="error-message">
+            <div class="register-link" style="color:#e53e3e; font-weight:600;">
                 <?php echo htmlspecialchars($error); ?>
             </div>
             <?php endif; ?>

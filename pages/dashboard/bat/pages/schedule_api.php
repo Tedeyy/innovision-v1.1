@@ -60,22 +60,43 @@ if ($action === 'list'){
   }
   // Also include seller-scheduled meet-ups from ongoingtransactions
   [$ot,$ots,$ote] = sb_rest('GET','ongoingtransactions',[
-    'select'=>'transaction_id,listing_id,seller_id,buyer_id,transaction_date,transaction_location'
+    'select'=>'transaction_id,listing_id,seller_id,buyer_id,transaction_date,transaction_location,bat_id'
   ]);
   if ($ots>=200 && $ots<300 && is_array($ot)){
     foreach ($ot as $row){
-      $dt = isset($row['transaction_date']) ? (string)$row['transaction_date'] : '';
-      if ($dt==='') continue;
-      $title = 'Transaction Meet-up for Listing #'.(string)($row['listing_id'] ?? '');
-      $desc  = 'Seller '.(string)($row['seller_id'] ?? '').' x Buyer '.(string)($row['buyer_id'] ?? '').
-               ($row['transaction_location'] ? (' at '.(string)$row['transaction_location']) : '');
-      $events[] = [
-        'id' => 'ongoing-'.(string)($row['transaction_id'] ?? ''),
-        'title' => $title,
-        'start' => $dt,
-        'end' => $dt,
-        'done' => false,
-      ];
+      $dt = isset($row['transaction_date']) ? trim((string)$row['transaction_date']) : '';
+      $loc = isset($row['transaction_location']) ? trim((string)$row['transaction_location']) : '';
+      if ($dt==='') continue; // must have date/time
+      if ($loc==='') continue; // must have location
+      // Validate location as lat,lng numeric pair
+      $okLoc = false; $la=null; $ln=null;
+      if (strpos($loc, ',') !== false){
+        $parts = explode(',', $loc, 2);
+        $la = (float)trim($parts[0]); $ln = (float)trim($parts[1]);
+        if (is_finite($la) && is_finite($ln)) $okLoc = true;
+      }
+      if (!$okLoc) continue;
+      $listingId = (int)($row['listing_id'] ?? 0);
+      $title = 'Transaction Meet-up for Listing #'.$listingId;
+      $desc  = 'Seller '.(string)($row['seller_id'] ?? '').' x Buyer '.(string)($row['buyer_id'] ?? '').' at '.$loc;
+      // Only for current BAT; we need bat_id in row to match session bat
+      $rowBat = isset($row['bat_id']) ? (int)$row['bat_id'] : null;
+      if ($rowBat !== null && (int)$rowBat === (int)$bat_id){
+        // Check if schedule already exists for this BAT + title
+        [$ex,$xs,$xe] = sb_rest('GET','schedule',[ 'select'=>'schedule_id', 'bat_id'=>'eq.'.$bat_id, 'title'=>'eq.'.$title, 'limit'=>1 ]);
+        if (!($xs>=200 && $xs<300) || !is_array($ex) || !isset($ex[0])){
+          // Create schedule from dt
+          $ts = strtotime($dt);
+          $month = ltrim(date('m',$ts),'0');
+          $day   = ltrim(date('d',$ts),'0');
+          $hour  = (int)date('H',$ts);
+          $minute= (int)date('i',$ts);
+          $payload = [[ 'bat_id'=>(int)$bat_id, 'title'=>$title, 'description'=>$desc, 'month'=>$month, 'day'=>$day, 'hour'=>$hour, 'minute'=>$minute ]];
+          sb_rest('POST','schedule',[], $payload, ['Prefer: return=representation']);
+        }
+      }
+      // Also include in current response to reflect immediately
+      $events[] = [ 'id' => 'ongoing-'.(string)($row['transaction_id'] ?? ''), 'title' => $title, 'start' => $dt, 'end' => $dt, 'done' => false ];
     }
   }
   json_ok(['events'=>$events]);

@@ -114,19 +114,24 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="../style/dashboard.css">
-  <link rel="stylesheet" href="../style/bat-transaction-monitoring.css">
+  <style>
+    .section{margin-bottom:16px}
+    .table{width:100%;border-collapse:collapse}
+    .table th,.table td{padding:8px;text-align:left}
+    .table thead tr{border-bottom:1px solid #e2e8f0}
+  </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="top">
+    <div class="top" style="margin-bottom:8px;">
       <div><h1>Transaction Monitoring</h1></div>
       <div><a class="btn" href="../dashboard.php">Back to Dashboard</a></div>
     </div>
 
     <div class="card section">
-      <h2>Started</h2>
+      <h2 style="margin:0 0 8px 0;">Started</h2>
       <?php if (!$start['ok']): ?>
-        <div class="alert">Failed to load started transactions (code <?php echo (int)$start['code']; ?>)</div>
+        <div style="margin:6px 0;padding:8px;border:1px solid #fecaca;background:#fef2f2;color:#7f1d1d;border-radius:8px;">Failed to load started transactions (code <?php echo (int)$start['code']; ?>)</div>
       <?php endif; ?>
       <table class="table">
         <thead>
@@ -143,7 +148,7 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
         <tbody>
           <?php $startRows = $start['rows'] ?? []; ?>
           <?php if (count($startRows)===0): ?>
-            <tr><td colspan="7" class="subtle">No started transactions.</td></tr>
+            <tr><td colspan="7" style="color:#4a5568;">No started transactions.</td></tr>
           <?php else: foreach ($startRows as $r): ?>
             <tr>
               <td><?php echo esc($r['transaction_id'] ?? ''); ?></td>
@@ -160,9 +165,9 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
     </div>
 
     <div class="card section">
-      <h2>Ongoing</h2>
+      <h2 style="margin:0 0 8px 0;">Ongoing</h2>
       <?php if (!$ongo['ok']): ?>
-        <div class="alert">Failed to load ongoing transactions (code <?php echo (int)$ongo['code']; ?>)</div>
+        <div style="margin:6px 0;padding:8px;border:1px solid #fecaca;background:#fef2f2;color:#7f1d1d;border-radius:8px;">Failed to load ongoing transactions (code <?php echo (int)$ongo['code']; ?>)</div>
       <?php endif; ?>
       <table class="table">
         <thead>
@@ -182,7 +187,7 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
         <tbody>
           <?php $ongoRows = $ongo['rows'] ?? []; ?>
           <?php if (count($ongoRows)===0): ?>
-            <tr><td colspan="10" class="subtle">No ongoing transactions.</td></tr>
+            <tr><td colspan="10" style="color:#4a5568;">No ongoing transactions.</td></tr>
           <?php else: foreach ($ongoRows as $r): $loc = $r['transaction_location'] ?? ($r['Transaction_location'] ?? ''); ?>
             <tr>
               <td><?php echo esc($r['transaction_id'] ?? ''); ?></td>
@@ -202,9 +207,9 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
     </div>
 
     <div class="card section">
-      <h2>Completed</h2>
+      <h2 style="margin:0 0 8px 0;">Completed</h2>
       <?php if (!$done['ok']): ?>
-        <div class="alert">Failed to load completed transactions (code <?php echo (int)$done['code']; ?>)</div>
+        <div style="margin:6px 0;padding:8px;border:1px solid #fecaca;background:#fef2f2;color:#7f1d1d;border-radius:8px;">Failed to load completed transactions (code <?php echo (int)$done['code']; ?>)</div>
       <?php endif; ?>
       <table class="table">
         <thead>
@@ -225,7 +230,7 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
         <tbody>
           <?php $doneRows = $done['rows'] ?? []; ?>
           <?php if (count($doneRows)===0): ?>
-            <tr><td colspan="11" class="subtle">No completed transactions.</td></tr>
+            <tr><td colspan="11" style="color:#4a5568;">No completed transactions.</td></tr>
           <?php else: foreach ($doneRows as $r): ?>
             <tr>
               <td><?php echo esc($r['transaction_id'] ?? ''); ?></td>
@@ -248,15 +253,95 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
   </div>
 
   <!-- Transaction Details Modal -->
-  <div id="txModal" class="modal">
-    <div class="panel">
-      <div class="modal-head">
-        <h2 id="txTitle">Transaction</h2>
+  <div id="txModal" class="modal" style="display:none;align-items:center;justify-content:center;">
+    <div class="panel" style="max-width:820px;width:100%">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <h2 id="txTitle" style="margin:0;">Transaction</h2>
         <button class="close-btn" data-close="txModal">Close</button>
       </div>
-      <div id="txBody"></div>
+      <div id="txBody" style="margin-top:8px;"></div>
     </div>
   </div>
-  <script src="../script/bat-transaction-monitoring.js"></script>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    (function(){
+      function $(s){ return document.querySelector(s); }
+      function $all(s){ return Array.prototype.slice.call(document.querySelectorAll(s)); }
+      function openModal(id){ var el=document.getElementById(id); if(el) el.style.display='flex'; }
+      function closeModal(id){ var el=document.getElementById(id); if(el) el.style.display='none'; }
+      var currentTxMap = null;
+      var currentTxMarker = null;
+      function destroyTxMap(){ try{ if (currentTxMap){ currentTxMap.remove(); } }catch(e){} currentTxMap=null; currentTxMarker=null; }
+      $all('.close-btn').forEach(function(b){ b.addEventListener('click', function(){ destroyTxMap(); var body=document.getElementById('txBody'); if(body) body.innerHTML=''; closeModal(b.getAttribute('data-close')); }); });
+      document.addEventListener('click', function(e){
+        if (e.target && e.target.classList.contains('btn-show')){
+          var data = {};
+          try{ data = JSON.parse(e.target.getAttribute('data-row')||'{}'); }catch(_){ data={}; }
+          var isOngoing = !!(data && (data.bat_id || data.Bat_id || data.transaction_date || data.Transaction_date));
+          document.getElementById('txTitle').textContent = (isOngoing? 'Ongoing' : (data.completed_transaction? 'Completed' : 'Started')) + ' Transaction #'+(data.transaction_id||'');
+          var txBody = document.getElementById('txBody');
+          var locVal = (data.transaction_location || data.Transaction_location || '').toString().trim();
+          var whenVal = data.transaction_date || data.Transaction_date || '';
+
+          // Fetch details for listing + seller/buyer
+          var detailUrl = 'transaction_monitoring.php?action=details&listing_id='+(data.listing_id||'')+'&seller_id='+(data.seller_id||'')+'&buyer_id='+(data.buyer_id||'');
+          fetch(detailUrl, { credentials:'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(info){
+              var listing = info && info.listing ? info.listing : {};
+              var seller = info && info.seller ? info.seller : {};
+              var buyer  = info && info.buyer  ? info.buyer  : {};
+              var thumb  = info && info.thumb  ? info.thumb  : '';
+              function fullname(p){ var f=p.user_fname||'', m=p.user_mname||'', l=p.user_lname||''; return (f+' '+(m?m+' ':'')+l).trim(); }
+              var bodyHtml = ''+
+                '<div class="card" style="padding:12px;">'+
+                  '<div style="display:flex;gap:12px;align-items:flex-start;">'+
+                    '<img src="'+thumb+'" style="width:120px;height:120px;object-fit:cover;border:1px solid #e2e8f0;border-radius:8px;" />'+
+                    '<div style="flex:1;">'+
+                      '<div style="font-weight:600;margin-bottom:6px;">'+(listing.livestock_type||'')+' • '+(listing.breed||'')+'</div>'+
+                      '<div>Price: ₱'+(listing.price||'')+'</div>'+
+                      '<div>Address: '+(listing.address||'')+'</div>'+
+                      '<div class="subtle">Listing #'+(listing.listing_id||'')+' • '+(listing.created||'')+'</div>'+
+                    '</div>'+
+                  '</div>'+
+                  '<hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0" />'+
+                  '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
+                    '<div><div style="font-weight:600;">Seller</div><div>'+fullname(seller)+'</div><div>Email: '+(seller.email||'')+'</div><div>Contact: '+(seller.contact||'')+'</div></div>'+
+                    '<div><div style="font-weight:600;">Buyer</div><div>'+fullname(buyer)+'</div><div>Email: '+(buyer.email||'')+'</div><div>Contact: '+(buyer.contact||'')+'</div></div>'+
+                  '</div>'+
+                '</div>'+
+                '<div class="card" style="padding:12px;margin-top:10px;">'+
+                  '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">'+
+                    '<div><strong>Date & Time:</strong> <span>'+(whenVal||'—')+'</span></div>'+
+                    '<div><strong>Location:</strong> <span>'+(locVal||'—')+'</span></div>'+
+                  '</div>'+
+                  '<div id="txMap" style="height:260px;border:1px solid #e2e8f0;border-radius:8px;"></div>'+
+                '</div>';
+              txBody.innerHTML = bodyHtml;
+              // Open modal first so map can compute size
+              openModal('txModal');
+              // Initialize map after modal is visible
+              setTimeout(function(){
+                if (!window.L){ return; }
+                var mEl = document.getElementById('txMap'); if (!mEl) return;
+                destroyTxMap();
+                currentTxMap = L.map(mEl).setView([8.314209 , 124.859425], 12);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(currentTxMap);
+                currentTxMap.on('tileload', function(){ try{ currentTxMap.invalidateSize(); }catch(e){} });
+                if (locVal && locVal.indexOf(',')>0){
+                  var parts = locVal.split(',');
+                  var la = parseFloat((parts[0]||'').trim()); var ln = parseFloat((parts[1]||'').trim());
+                  if (!isNaN(la) && !isNaN(ln)){
+                    var ll=[la,ln]; currentTxMarker = L.marker(ll).addTo(currentTxMap); try{ currentTxMap.setView(ll,14);}catch(_){ }
+                  }
+                }
+                setTimeout(function(){ try{ currentTxMap.invalidateSize(); }catch(e){} }, 50);
+              }, 50);
+            });
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

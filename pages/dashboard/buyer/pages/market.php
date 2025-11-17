@@ -21,21 +21,8 @@ function parse_loc_pair($locStr){
   return [null,null];
 }
 
-// Pins endpoint: buyer location + active/sold location pins
+// Pins endpoint: active/sold location pins (no buyer location)
 if (isset($_GET['pins']) && $_GET['pins']=='1'){
-  $buyer_id = $_SESSION['user_id'] ?? null;
-  $role = $_SESSION['role'] ?? '';
-  $buyer = null; $buyerLat = null; $buyerLng = null;
-  if ($buyer_id && $role==='buyer'){
-    [$bres,$bst,$berr] = sb_rest('GET','buyer',[ 'select'=>'user_id,location', 'user_id'=>'eq.'.$buyer_id, 'limit'=>1 ]);
-    if ($bst>=200 && $bst<300 && is_array($bres) && isset($bres[0])){
-      $buyer = $bres[0];
-      if (!empty($buyer['location'])){
-        $loc = json_decode($buyer['location'], true);
-        if (is_array($loc)){ $buyerLat = $loc['lat'] ?? null; $buyerLng = $loc['lng'] ?? null; }
-      }
-    }
-  }
   // Build filters (same as list view)
   $filters = [];
   $andConds = [];
@@ -97,7 +84,6 @@ if (isset($_GET['pins']) && $_GET['pins']=='1'){
   }
   header('Content-Type: application/json');
   echo json_encode([
-    'buyer'=> ['lat'=>$buyerLat, 'lng'=>$buyerLng],
     'activePins'=>$activePins,
     'soldPins'=>$soldPins
   ], JSON_UNESCAPED_SLASHES);
@@ -341,7 +327,6 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
       }
 
       function loadPins(){
-        // pass current filters to pins endpoint
         var q = new URLSearchParams(currentFilters());
         q.append('pins','1');
         fetch('market.php?'+q.toString(), { credentials:'same-origin' })
@@ -349,23 +334,22 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
           .then(function(data){
             if (!data) return;
             markerLayer.clearLayers();
-            // buyer location
-            if (data.buyer && data.buyer.lat!=null && data.buyer.lng!=null){
-              L.circleMarker([data.buyer.lat, data.buyer.lng], { radius:8, color:'#2563eb', fillColor:'#3b82f6', fillOpacity:0.8 }).addTo(markerLayer).bindPopup('You');
-              map.setView([data.buyer.lat, data.buyer.lng], 12);
-            }
+            var bounds = [];
             // active pins (green)
             (data.activePins||[]).forEach(function(p){
               var m = L.circleMarker([p.lat, p.lng], { radius:7, color:'#16a34a', fillColor:'#22c55e', fillOpacity:0.9 }).addTo(markerLayer);
               m.bindTooltip((p.type||'')+' • '+(p.breed||''));
               m.on('click', function(){ window.location.href = 'viewpost.php?listing_id='+encodeURIComponent(p.listing_id); });
+              bounds.push([p.lat, p.lng]);
             });
             // sold pins (yellow)
             (data.soldPins||[]).forEach(function(p){
               var m2 = L.circleMarker([p.lat, p.lng], { radius:7, color:'#f59e0b', fillColor:'#fbbf24', fillOpacity:0.9 }).addTo(markerLayer);
               m2.bindTooltip((p.type||'')+' • '+(p.breed||''));
               m2.on('click', function(){ window.location.href = 'viewpost.php?listing_id='+encodeURIComponent(p.listing_id); });
+              bounds.push([p.lat, p.lng]);
             });
+            if (bounds.length){ try{ map.fitBounds(bounds, { padding:[20,20] }); }catch(e){} }
           })
           .catch(function(){});
       }

@@ -123,11 +123,28 @@ $preType = isset($_GET['type']) ? (string)$_GET['type'] : '';
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="pages/style/marketplace.css" />
+  <style>
+    body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;color:#111827}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    .top{display:flex;align-items:center;justify-content:space-between}
+    .btn{background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 12px;cursor:pointer}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px}
+    .filters{display:grid;grid-template-columns:repeat(8,minmax(120px,1fr));gap:8px}
+    .feed{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+    .item{display:grid;grid-template-columns:220px 1fr auto;gap:12px;border:1px solid #e2e8f0;border-radius:8px;padding:8px}
+    .map-top{height:280px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:12px}
+    .muted{color:#4a5568;font-size:12px}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:9999}
+    .panel{background:#fff;border-radius:10px;max-width:900px;width:95vw;max-height:90vh;overflow:auto;padding:16px}
+  </style>
+  <script>
+    // expose initial type for preselect
+    window.PRE_TYPE = <?php echo json_encode($preType); ?>;
+  </script>
   </head>
 <body>
-  <div id="market-root" class="wrap" data-pretype="<?php echo safe($preType); ?>">
-    <div class="top">
+  <div class="wrap">
+    <div class="top" style="margin-bottom:8px;">
       <div><h1>Marketplace</h1></div>
       <div>
         <a class="btn" href="index.html">Home</a>
@@ -181,17 +198,116 @@ $preType = isset($_GET['type']) ? (string)$_GET['type'] : '';
           <input type="number" id="f-max-weight" min="0" step="0.01" />
         </div>
       </div>
-      <div class="controls">
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
         <button id="apply" class="btn">Apply Filters</button>
-        <button id="clear" class="btn btn-muted">Clear</button>
+        <button id="clear" class="btn" style="background:#718096;">Clear</button>
       </div>
     </div>
 
     <div id="feed" class="feed"></div>
-    <div id="sentinel" class="sentinel"></div>
+    <div id="sentinel" style="height:24px;"></div>
   </div>
 
-  <div id="viewModal" class="modal"><div class="panel"><div class="modal-header"><h2>Listing</h2><button class="btn btn-danger" id="mClose">Close</button></div><div id="mBody"></div></div></div>
-  <script src="pages/script/marketplace.js"></script>
+  <div id="viewModal" class="modal"><div class="panel"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><h2 style="margin:0;">Listing</h2><button class="btn" id="mClose" style="background:#e53e3e;">Close</button></div><div id="mBody" style="margin-top:8px;"></div></div></div>
+
+  <script>
+    (function(){
+      function $(s){ return document.querySelector(s); }
+      var feed = document.getElementById('feed');
+      var sentinel = document.getElementById('sentinel');
+      var topMapEl = document.getElementById('top-map');
+      var map = L.map(topMapEl).setView([8.314209 , 124.859425], 12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+      var markerLayer = L.layerGroup().addTo(map);
+      var state = { offset: 0, limit: 10, loading: false, done: false };
+
+      function currentFilters(){
+        return {
+          livestock_type: document.getElementById('f-type').value || '',
+          breed: document.getElementById('f-breed').value || '',
+          min_age: document.getElementById('f-min-age').value,
+          max_age: document.getElementById('f-max-age').value,
+          min_price: document.getElementById('f-min-price').value,
+          max_price: document.getElementById('f-max-price').value,
+          min_weight: document.getElementById('f-min-weight').value,
+          max_weight: document.getElementById('f-max-weight').value
+        };
+      }
+      function buildQuery(params){ var q = new URLSearchParams(); Object.keys(params).forEach(function(k){ if (params[k]!=='' && params[k]!=null) q.append(k, params[k]); }); return q.toString(); }
+
+      function loadPins(){
+        var q = new URLSearchParams(currentFilters()); q.append('pins','1');
+        fetch('marketplace.php?'+q.toString())
+          .then(function(r){ return r.json(); })
+          .then(function(data){
+            markerLayer.clearLayers();
+            (data.activePins||[]).forEach(function(p){
+              var m = L.circleMarker([p.lat, p.lng], { radius:7, color:'#16a34a', fillColor:'#22c55e', fillOpacity:0.9 }).addTo(markerLayer);
+              m.bindTooltip((p.type||'')+' • '+(p.breed||''));
+            });
+          });
+      }
+
+      function escapeHtml(s){ if (s==null) return ''; return String(s).replace(/[&<>"]+/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+      function renderItems(items){
+        var frag = document.createDocumentFragment();
+        items.forEach(function(it){
+          var card = document.createElement('div'); card.className = 'item';
+          var img = document.createElement('img'); img.src = it.thumb; img.alt='thumb'; img.style.width='120px'; img.style.height='120px'; img.style.objectFit='cover'; img.style.borderRadius='8px'; img.style.border='1px solid #e2e8f0'; img.onerror=function(){ if (img.src!==it.thumb_fallback) img.src = it.thumb_fallback; else img.style.display='none'; };
+          var info = document.createElement('div');
+          info.innerHTML = '<div><strong>'+escapeHtml(it.livestock_type)+' • '+escapeHtml(it.breed)+'</strong></div>'+
+            '<div>'+escapeHtml(it.address)+'</div>'+
+            '<div>Age: '+escapeHtml(it.age)+' • Weight: '+escapeHtml(it.weight)+'kg • Price: ₱'+escapeHtml(it.price)+'</div>'+
+            '<div class="muted">Listing #'+it.listing_id+' • Seller #'+it.seller_id+' • '+escapeHtml(it.created||'')+'</div>'+
+            (it.seller_name?('<div>Seller: '+escapeHtml(it.seller_name)+'</div>'):'');
+          var actions = document.createElement('div'); actions.style.display='flex'; actions.style.flexDirection='column'; actions.style.gap='8px';
+          var showBtn = document.createElement('button'); showBtn.className='btn'; showBtn.textContent='Show'; showBtn.addEventListener('click', function(){ openModal(it); });
+          var loginBtn = document.createElement('a'); loginBtn.className='btn'; loginBtn.textContent='Login to Express Interest'; loginBtn.href='pages/authentication/login.php'; loginBtn.style.background='#4a5568'; loginBtn.style.textAlign='center';
+          actions.appendChild(showBtn); actions.appendChild(loginBtn);
+          card.appendChild(img); card.appendChild(info); card.appendChild(actions);
+          frag.appendChild(card);
+        });
+        feed.appendChild(frag);
+      }
+
+      function loadMore(){ if (state.loading || state.done) return; state.loading = true; var params = Object.assign({ ajax: 1, limit: state.limit, offset: state.offset }, currentFilters()); var q = buildQuery(params);
+        fetch('marketplace.php?'+q).then(function(r){ return r.json(); }).then(function(data){ var items=(data&&data.items)?data.items:[]; if(items.length===0){ state.done=true; return; } renderItems(items); state.offset += items.length; }).finally(function(){ state.loading=false; }); }
+
+      var io = new IntersectionObserver(function(entries){ entries.forEach(function(e){ if (e.isIntersecting) loadMore(); }); }); io.observe(sentinel);
+
+      document.getElementById('apply').addEventListener('click', function(){ feed.innerHTML=''; markerLayer.clearLayers(); state.offset=0; state.done=false; loadMore(); loadPins(); });
+      document.getElementById('clear').addEventListener('click', function(){ ['f-type','f-breed','f-min-age','f-max-age','f-min-price','f-max-price','f-min-weight','f-max-weight'].forEach(function(id){ var el=document.getElementById(id); if(el.tagName==='SELECT') el.value=''; else el.value=''; }); feed.innerHTML=''; markerLayer.clearLayers(); state.offset=0; state.done=false; loadMore(); loadPins(); });
+
+      // Preselect from query param
+      if (window.PRE_TYPE){ var tSel=document.getElementById('f-type'); Array.from(tSel.options).forEach(function(o){ if ((o.value||'').toLowerCase()===String(window.PRE_TYPE).toLowerCase()) o.selected=true; }); }
+
+      function openModal(it){
+        var m = document.getElementById('viewModal'); var b = document.getElementById('mBody');
+        b.innerHTML = ''+
+          '<div style="display:flex;gap:12px;align-items:flex-start;">'+
+            '<img src="'+it.thumb+'" onerror="this.onerror=null;this.src=\''+it.thumb_fallback+'\'" style="width:160px;height:160px;object-fit:cover;border:1px solid #e2e8f0;border-radius:8px" />'+
+            '<div style="flex:1">'+
+              '<div><strong>'+escapeHtml(it.livestock_type)+' • '+escapeHtml(it.breed)+'</strong></div>'+
+              '<div>'+escapeHtml(it.address)+'</div>'+
+              '<div>Age: '+escapeHtml(it.age)+' • Weight: '+escapeHtml(it.weight)+'kg • Price: ₱'+escapeHtml(it.price)+'</div>'+
+              '<div class="muted">Listing #'+it.listing_id+' • Seller #'+it.seller_id+' • '+escapeHtml(it.created||'')+'</div>'+
+              (it.seller_name?('<div>Seller: '+escapeHtml(it.seller_name)+'</div>'):'')+
+              '<div style="margin-top:10px;"><a class="btn" style="background:#4a5568" href="pages/authentication/login.php">Login to Express Interest</a></div>'+
+            '</div>'+
+          '</div>'+
+          '<div id="mMap" style="height:220px;border:1px solid #e2e8f0;border-radius:8px;margin-top:10px"></div>';
+        m.style.display='flex';
+        setTimeout(function(){ var el=document.getElementById('mMap'); if (!el || !window.L) return; var mm = L.map(el).setView([8.314209 , 124.859425], 12); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(mm); if (it.lat!=null && it.lng!=null){ mm.setView([it.lat,it.lng], 12); L.marker([it.lat,it.lng]).addTo(mm); } },0);
+      }
+      document.getElementById('mClose').addEventListener('click', function(){ document.getElementById('viewModal').style.display='none'; });
+      document.getElementById('viewModal').addEventListener('click', function(ev){ if (ev.target.id==='viewModal') document.getElementById('viewModal').style.display='none'; });
+
+      // initial load
+      loadPins();
+      loadMore();
+    })();
+  </script>
 </body>
 </html>
+
