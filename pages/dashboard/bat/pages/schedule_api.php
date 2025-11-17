@@ -58,6 +58,26 @@ if ($action === 'list'){
       ];
     }
   }
+  // Also include seller-scheduled meet-ups from ongoingtransactions
+  [$ot,$ots,$ote] = sb_rest('GET','ongoingtransactions',[
+    'select'=>'transaction_id,listing_id,seller_id,buyer_id,transaction_date,transaction_location'
+  ]);
+  if ($ots>=200 && $ots<300 && is_array($ot)){
+    foreach ($ot as $row){
+      $dt = isset($row['transaction_date']) ? (string)$row['transaction_date'] : '';
+      if ($dt==='') continue;
+      $title = 'Transaction Meet-up for Listing #'.(string)($row['listing_id'] ?? '');
+      $desc  = 'Seller '.(string)($row['seller_id'] ?? '').' x Buyer '.(string)($row['buyer_id'] ?? '').
+               ($row['transaction_location'] ? (' at '.(string)$row['transaction_location']) : '');
+      $events[] = [
+        'id' => 'ongoing-'.(string)($row['transaction_id'] ?? ''),
+        'title' => $title,
+        'start' => $dt,
+        'end' => $dt,
+        'done' => false,
+      ];
+    }
+  }
   json_ok(['events'=>$events]);
 }
 

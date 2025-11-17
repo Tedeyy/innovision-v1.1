@@ -70,8 +70,9 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
   $listingId = isset($_POST['listing_id']) ? (int)$_POST['listing_id'] : 0;
   $sellerIdIn = isset($_POST['seller_id']) ? (int)$_POST['seller_id'] : 0;
   $buyerIdIn = isset($_POST['buyer_id']) ? (int)$_POST['buyer_id'] : 0;
-  // Seller does not set date/time/location; BAT will handle later
-  if (!$listingId || !$sellerIdIn || !$buyerIdIn){
+  $when = isset($_POST['transaction_date']) ? (string)$_POST['transaction_date'] : '';
+  $loc  = isset($_POST['transaction_location']) ? (string)$_POST['transaction_location'] : '';
+  if (!$listingId || !$sellerIdIn || !$buyerIdIn || $when===''){
     echo json_encode(['ok'=>false,'error'=>'missing_params']);
     exit;
   }
@@ -81,7 +82,8 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
     'buyer_id'=>$buyerIdIn,
     'status'=>'Ongoing',
     'started_at'=>date('c'),
-    // date/time/location will be set by BAT later
+    'transaction_date'=>$when,
+    'transaction_location'=>$loc
   ]];
   [$ores,$ost,$oerr] = sb_rest('POST','ongoingtransactions',[], $payload, ['Prefer: return=representation']);
   if (!($ost>=200 && $ost<300)){
@@ -116,7 +118,7 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
     'listing_id'=>$listingId,
     'seller_id'=>$sellerIdIn,
     'buyer_id'=>$buyerIdIn,
-    'status'=>'Ongoing'
+    'status'=>'Meet-up scheduled by seller on '.$when.' at '.($loc?:'N/A')
   ]];
   [$lr,$ls,$le] = sb_rest('POST','transactions_logs',[], $logPayload, ['Prefer: return=representation']);
   $warning = null;
@@ -257,7 +259,11 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
               '<div><strong>'+(listing.livestock_type||'')+' • '+(listing.breed||'')+'</strong><div>Price: ₱'+(listing.price||'')+'</div><div>Address: '+(listing.address||'')+'</div><div class="subtle">Listing #'+(listing.listing_id||'')+' • Created '+(listing.created||'')+'</div></div>'+
               '<div id="imgWrap"></div>'+
             '</div>'+
-            '<div style="margin-top:10px;"><div id="txMap" style="height:200px;border:1px solid #e2e8f0;border-radius:8px"></div></div>'+
+            '<div style="margin-top:10px;display:grid;grid-template-columns:1fr;gap:8px;">'+
+              '<label>Date & Time <input type="datetime-local" id="meetWhen" required /></label>'+
+              '<label>Location (lat,lng) <input type="text" id="meetLoc" placeholder="Click map or enter lat,lng" /></label>'+
+              '<div id="txMap" style="height:200px;border:1px solid #e2e8f0;border-radius:8px"></div>'+
+            '</div>'+
             '<hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0" />'+
             '<h3>Seller</h3>'+
             '<div style="display:flex;gap:10px;align-items:flex-start;">'+ avatarHTML(seller) +
@@ -275,10 +281,16 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
             var mEl = document.getElementById('txMap'); if (!mEl || !window.L) return;
             var map = L.map(mEl).setView([8.314209 , 124.859425], 12);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+            var marker = null;
             if (data.lat!=null && data.lng!=null){
               map.setView([data.lat, data.lng], 12);
-              L.marker([data.lat, data.lng]).addTo(map);
+              marker = L.marker([data.lat, data.lng]).addTo(map);
             }
+            map.on('click', function(ev){
+              var lat = ev.latlng.lat.toFixed(6), lng = ev.latlng.lng.toFixed(6);
+              var inp = document.getElementById('meetLoc'); if (inp) inp.value = lat+','+lng;
+              if (marker) { marker.setLatLng(ev.latlng); } else { marker = L.marker(ev.latlng).addTo(map); }
+            });
           }, 0);
           openModal('txModal');
           var btnM = document.getElementById('btnMeetup');
@@ -289,6 +301,11 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
               fd.append('listing_id', (listing.listing_id||''));
               fd.append('seller_id', (data.seller_id||''));
               fd.append('buyer_id', (data.buyer_id||''));
+              var when = (document.getElementById('meetWhen')||{}).value||'';
+              var loc = (document.getElementById('meetLoc')||{}).value||'';
+              if (!when){ alert('Please select date and time'); return; }
+              fd.append('transaction_date', when);
+              fd.append('transaction_location', loc);
               btnM.disabled = true; btnM.textContent = 'Scheduling...';
               fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
                 .then(function(r){ return r.json(); })

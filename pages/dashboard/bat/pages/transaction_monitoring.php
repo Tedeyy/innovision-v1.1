@@ -102,8 +102,8 @@ function fetch_table($table, $select, $order){
 }
 
 $start = fetch_table('starttransactions','transaction_id,listing_id,seller_id,buyer_id,status,started_at','started_at.desc');
-$ongo  = fetch_table('ongoingtransactions','transaction_id,listing_id,seller_id,buyer_id,status,started_at','started_at.desc');
-$done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_id,buyer_id,status,started_at,completed_transaction','completed_transaction.desc');
+$ongo  = fetch_table('ongoingtransactions','transaction_id,listing_id,seller_id,buyer_id,status,started_at,transaction_date,transaction_location,bat_id','started_at.desc');
+$done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_id,buyer_id,status,started_at,transaction_date,transaction_location,completed_transaction,bat_id','completed_transaction.desc');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -312,10 +312,9 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
                   '</div>'+
                 '</div>'+
                 '<div class="card" style="padding:12px;margin-top:10px;">'+
-                  '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">'+
-                    '<label style="display:flex;gap:6px;align-items:center;">Date & Time: <input type="datetime-local" id="txWhen" value="'+(whenVal||'')+'" /></label>'+
-                    '<label style="display:flex;gap:6px;align-items:center;">Location: <input type="text" id="txLoc" value="'+(locVal||'')+'" placeholder="lat,lng" style="min-width:260px;" /></label>'+
-                    '<button class="btn" id="txSave">Save</button>'+
+                  '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">'+
+                    '<div><strong>Date & Time:</strong> <span>'+(whenVal||'—')+'</span></div>'+
+                    '<div><strong>Location:</strong> <span>'+(locVal||'—')+'</span></div>'+
                   '</div>'+
                   '<div id="txMap" style="height:260px;border:1px solid #e2e8f0;border-radius:8px;"></div>'+
                 '</div>';
@@ -337,74 +336,9 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
                     var ll=[la,ln]; currentTxMarker = L.marker(ll).addTo(currentTxMap); try{ currentTxMap.setView(ll,14);}catch(_){ }
                   }
                 }
-                // Allow clicking map to set location regardless of status
-                currentTxMap.on('click', function(ev){
-                  var lat = ev.latlng.lat.toFixed(6), lng = ev.latlng.lng.toFixed(6);
-                  document.getElementById('txLoc').value = lat+','+lng;
-                  if (currentTxMarker){ currentTxMarker.setLatLng(ev.latlng); } else { currentTxMarker = L.marker(ev.latlng).addTo(currentTxMap); }
-                });
-                var save = document.getElementById('txSave');
-                if (save){
-                  save.addEventListener('click', function(){
-                    var when = document.getElementById('txWhen').value;
-                    var loc  = document.getElementById('txLoc').value;
-                    if (!when){ alert('Please select date and time'); return; }
-                    save.disabled = true; save.textContent = 'Saving...';
-                    var fd = new FormData();
-                    fd.append('action','set_schedule');
-                    fd.append('transaction_id', data.transaction_id||'');
-                    fd.append('listing_id', data.listing_id||'');
-                    fd.append('seller_id', data.seller_id||'');
-                    fd.append('buyer_id', data.buyer_id||'');
-                    fd.append('transaction_date', when);
-                    fd.append('transaction_location', loc||'');
-                    fetch('transaction_monitoring.php', { method:'POST', body: fd, credentials:'same-origin' })
-                      .then(function(r){ return r.json(); })
-                      .then(function(res){
-                        if (!res || res.ok===false){
-                          alert('Failed to save schedule'+(res && res.code? (' (code '+res.code+')') : ''));
-                          save.disabled=false; save.textContent='Save';
-                        } else {
-                          var msg='Schedule saved'; if(res.warning) msg+='\n'+res.warning; alert(msg);
-                          save.disabled=true; save.textContent='Saved';
-                        }
-                      })
-                      .catch(function(){ save.disabled=false; save.textContent='Save'; });
-                  });
-                }
                 setTimeout(function(){ try{ currentTxMap.invalidateSize(); }catch(e){} }, 50);
               }, 50);
             });
-          // Save only for ongoing
-          if (isOngoing){
-            var save = document.getElementById('txSave');
-            save.addEventListener('click', function(){
-              var when = document.getElementById('txWhen').value;
-              var loc = document.getElementById('txLoc').value;
-              if (!when){ alert('Please select date and time'); return; }
-              save.disabled = true; save.textContent = 'Saving...';
-              var fd = new FormData();
-              fd.append('action','set_schedule');
-              fd.append('transaction_id', data.transaction_id||'');
-              fd.append('listing_id', data.listing_id||'');
-              fd.append('seller_id', data.seller_id||'');
-              fd.append('buyer_id', data.buyer_id||'');
-              fd.append('transaction_date', when);
-              fd.append('transaction_location', loc||'');
-              fetch('transaction_monitoring.php', { method:'POST', body: fd, credentials:'same-origin' })
-                .then(function(r){ return r.json(); })
-                .then(function(res){
-                  if (!res || res.ok===false){
-                    alert('Failed to save schedule'+(res && res.code? (' (code '+res.code+')') : ''));
-                    save.disabled=false; save.textContent='Save';
-                  } else {
-                    var msg='Schedule saved'; if(res.warning) msg+='\n'+res.warning; alert(msg);
-                    save.disabled=true; save.textContent='Saved';
-                  }
-                })
-                .catch(function(){ save.disabled=false; save.textContent='Save'; });
-            });
-          }
         }
       });
     })();
