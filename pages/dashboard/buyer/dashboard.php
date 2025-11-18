@@ -35,6 +35,7 @@ $statusLabel = $isVerified ? 'Verified' : 'Under review';
             <a class="btn" href="pages/pricewatch.php">Price Watch</a>
             <a class="btn" href="pages/purchases.php">Purchases</a>
             <a class="btn" href="pages/transactions.php">Transactions</a>
+            <a class="btn" href="pages/userreport.php">User Report</a>
         </div>
         <div class="nav-right">
             <div class="greeting">hello <?php echo htmlspecialchars($firstname, ENT_QUOTES, 'UTF-8'); ?> • <?php echo htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8'); ?></div>

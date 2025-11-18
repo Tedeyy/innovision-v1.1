@@ -82,7 +82,7 @@ foreach ($typeNames as $i=>$tn){
         <div class="nav-center" style="display:flex;gap:16px;align-items:center;">
             <a class="btn" href="pages/usermanagement.php" style="background:#4a5568;">Users</a>
             <a class="btn" href="pages/listingmanagement.php" style="background:#4a5568;">Listings</a>
-            <a class="btn" href="pages/report_review.php" style="background:#4a5568;">Report Review & Penalty</a>
+            <a class="btn" href="pages/report_management.php" style="background:#4a5568;">Report Management</a>
             <a class="btn" href="pages/analytics.php" style="background:#4a5568;">Analytics</a>
         </div>
         <div class="nav-right">

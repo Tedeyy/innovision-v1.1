@@ -1,6 +1,6 @@
 <?php
 session_start();
-if (($_SESSION['role'] ?? '') !== 'seller'){
+if (($_SESSION['role'] ?? '') !== 'buyer'){
   http_response_code(302);
   header('Location: ../dashboard.php');
   exit;
@@ -13,7 +13,7 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Seller • User Report</title>
+  <title>Buyer • User Report</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../style/dashboard.css">
   <style>
@@ -49,7 +49,7 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
           <thead>
             <tr>
               <th>Date</th>
-              <th>Buyer</th>
+              <th>Seller</th>
               <th>Listing</th>
               <th>Status</th>
               <th>Action</th>
@@ -58,22 +58,22 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
           <tbody>
             <tr data-seller-id="1" data-buyer-id="2" data-listing-id="101">
               <td>2024-01-15</td>
-              <td>Maria Santos</td>
+              <td>John's Farm</td>
               <td>Organic Chicken - 5kg</td>
               <td>Completed</td>
               <td><button class="btn-report" onclick="openReportModal(this)">Report User</button></td>
             </tr>
-            <tr data-seller-id="1" data-buyer-id="4" data-listing-id="104">
-              <td>2024-01-13</td>
-              <td>Carlos Rodriguez</td>
-              <td>Fresh Vegetables Bundle</td>
+            <tr data-seller-id="3" data-buyer-id="2" data-listing-id="102">
+              <td>2024-01-12</td>
+              <td>Green Meadows</td>
+              <td>Fresh Eggs - 30 pcs</td>
               <td>Completed</td>
               <td><button class="btn-report" onclick="openReportModal(this)">Report User</button></td>
             </tr>
-            <tr data-seller-id="1" data-buyer-id="6" data-listing-id="105">
-              <td>2024-01-10</td>
-              <td>Lisa Chen</td>
-              <td>Free-range Eggs - 24 pcs</td>
+            <tr data-seller-id="5" data-buyer-id="2" data-listing-id="103">
+              <td>2024-01-08</td>
+              <td>Sunny Valley Ranch</td>
+              <td>Grass-fed Beef - 2kg</td>
               <td>In Progress</td>
               <td><button class="btn-report" onclick="openReportModal(this)">Report User</button></td>
             </tr>

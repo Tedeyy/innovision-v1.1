@@ -87,10 +87,6 @@ require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
     </div>
     <div class="card">
       <h3>Settings</h3>
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
-        <label><input type="checkbox" id="2fa" /> Two-Factor for Admins</label>
-        <label><input type="checkbox" id="audit" /> Enhanced Audit Logs</label>
-      </div>
     </div>
     
     <div class="card">

@@ -100,6 +100,21 @@ function fetch_list($tables, $sellerId, $statusFilter = null){
   return $all;
 }
 
+function checkUserViolations($userId){
+  // Check penalty_log for violations in the past month
+  $oneMonthAgo = date('Y-m-d H:i:s', strtotime('-1 month'));
+  [$penalties,$status,$error] = sb_rest('GET','penalty_log',[
+    'select'=>'*',
+    'seller_id' => 'eq.'.$userId,
+    'created' => 'gte.'.$oneMonthAgo
+  ]);
+  
+  if ($status>=200 && $status<300 && is_array($penalties) && !empty($penalties)){
+    return count($penalties);
+  }
+  return 0;
+}
+
 $pendingRows = ($tab==='pending') ? fetch_list(['reviewlivestocklisting','livestocklisting'], $sellerId) : [];
 $activeRows = ($tab==='active') ? fetch_list(['activelivestocklisting'], $sellerId, 'Verified') : [];
 $soldRows   = ($tab==='sold')   ? fetch_list(['activelivestocklisting'], $sellerId, 'Sold') : [];
@@ -128,6 +143,7 @@ $deniedRows = ($tab==='denied') ? fetch_list(['deniedlivestocklisting'], $seller
     .counter{border:1px dashed #cbd5e0;border-radius:8px;height:100px;display:flex;align-items:center;justify-content:center;color:#4a5568}
     .close-btn{background:#e53e3e;color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer}
     .sold-listing{text-decoration:line-through;color:#718096}
+    .violation-badge{background:#ef4444;color:white;padding:2px 6px;border-radius:4px;font-size:11px;margin-left:8px}
   </style>
 </head>
 <body>
@@ -170,6 +186,9 @@ $deniedRows = ($tab==='denied') ? fetch_list(['deniedlivestocklisting'], $seller
               <tr><td colspan="9" style="padding:12px;color:#4a5568;">No listings found.</td></tr>
             <?php else: ?>
               <?php foreach ($rows as $r): ?>
+                <?php 
+                $violations = checkUserViolations($sellerId);
+                ?>
                 <tr style="border-bottom:1px solid #edf2f7;">
                   <td style="padding:8px;">&nbsp;<?php echo htmlspecialchars((string)($r['listing_id'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                   <td style="padding:8px;">&nbsp;<span class="<?php echo (strtolower($r['status'] ?? '') === 'sold') ? 'sold-listing' : ''; ?>"><?php echo htmlspecialchars((string)($r['livestock_type'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></span></td>
@@ -177,7 +196,7 @@ $deniedRows = ($tab==='denied') ? fetch_list(['deniedlivestocklisting'], $seller
                   <td style="padding:8px;">&nbsp;<?php echo htmlspecialchars((string)($r['age'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                   <td style="padding:8px;">&nbsp;<?php echo htmlspecialchars((string)($r['weight'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                   <td style="padding:8px;">&nbsp;<?php echo htmlspecialchars((string)($r['price'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
-                  <td style="padding:8px;">&nbsp;<?php echo htmlspecialchars((string)($r['status'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+                  <td style="padding:8px;">&nbsp;<?php echo htmlspecialchars((string)($r['status'] ?? ''), ENT_QUOTES, 'UTF-8'); ?><?php if ($violations > 0): ?><span class="violation-badge"><?php echo $violations; ?> violation(s)</span><?php endif; ?></td>
                   <td style="padding:8px;">&nbsp;<?php echo htmlspecialchars((string)($r['created'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                   <td style="padding:8px;">&nbsp;<?php echo htmlspecialchars((string)($r['address'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                   <td style="padding:8px;">
