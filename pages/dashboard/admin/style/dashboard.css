@@ -1,5 +1,5 @@
 body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#f7fafc;margin:0;padding:24px;color:#2d3748}
-.wrap{max-width:960px;margin:0 auto}
+.wrap{max-width:1200px;margin:0 auto}
 .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;box-shadow:0 6px 20px rgba(0,0,0,.06)}
 h1{margin:0 0 12px}
 .meta{color:#4a5568;margin-bottom:16px}

@@ -1,6 +1,9 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
+require_once __DIR__ . '/../../../authentication/lib/use_case_logger.php';
+
+function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
 $firstname = isset($_SESSION['firstname']) && $_SESSION['firstname'] !== '' ? $_SESSION['firstname'] : 'User';
 $seller_id = $_SESSION['seller_id'] ?? ($_SESSION['user_id'] ?? null);
@@ -98,8 +101,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $listingId = $created['listing_id'] ?? null;
         $createdAt = $created['created'] ?? null;
 
-        // 3) Upload photos to storage bucket path listings/underreview/<seller_id>_<listing_id>_<created>/
+        // Log use case: Seller created new livestock listing
+        $purpose = format_use_case_description('Livestock Listing Created', [
+          'listing_id' => $listingId,
+          'livestock_type' => $livestock_type_name,
+          'breed' => $breed_name,
+          'age' => $age . ' years',
+          'weight' => $weight . ' kg',
+          'price' => '₱' . number_format($price, 2),
+          'address' => substr($address, 0, 100) . (strlen($address) > 100 ? '...' : ''),
+          'photo_count' => isset($_FILES['photos']) ? count($_FILES['photos']['name']) : 0
+        ]);
+        log_use_case($purpose);
+
+        // 3) Upload photos to storage bucket path listings/underreview/<seller_id>_<fullname>/
         if ($listingId && isset($_FILES['photos']) && is_array($_FILES['photos']['name'])){
+          // Build folder name: <seller_id>_<fullname>
+          $sfname = '';$smname='';$slname='';
+          [$sinf,$sinfst,$sinfe] = sb_rest('GET','seller',[ 'select'=>'user_fname,user_mname,user_lname','user_id'=>'eq.'.$effectiveSellerId, 'limit'=>1 ]);
+          if ($sinfst>=200 && $sinfst<300 && is_array($sinf) && isset($sinf[0])){
+            $sfname = (string)($sinf[0]['user_fname'] ?? '');
+            $smname = (string)($sinf[0]['user_mname'] ?? '');
+            $slname = (string)($sinf[0]['user_lname'] ?? '');
+          }
+          $fullname = trim($sfname.' '.($smname?:'').' '.$slname);
+          $sanFull = strtolower(preg_replace('/[^a-z0-9]+/i','_', $fullname));
+          $sanFull = trim($sanFull, '_');
+          if ($sanFull === '') { $sanFull = 'user'; }
+          // Created key as YmdHis
+          $createdKey = $createdAt ? date('YmdHis', strtotime($createdAt)) : date('YmdHis');
+
           $validFiles = [];
           $total = count($_FILES['photos']['name']);
           for ($i=0; $i<$total; $i++){
@@ -110,21 +141,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               ];
             }
           }
-          if (count($validFiles) === 0){
-            $error = 'Please upload at least 1 image (up to 3).';
+          if (count($validFiles) !== 3){
+            $error = 'Please upload exactly 3 images.';
           } else {
-            if (count($validFiles) > 3){ $validFiles = array_slice($validFiles, 0, 3); }
             $base = function_exists('sb_base_url') ? sb_base_url() : (getenv('SUPABASE_URL') ?: '');
             $service = function_exists('sb_env') ? (sb_env('SUPABASE_SERVICE_ROLE_KEY') ?: '') : (getenv('SUPABASE_SERVICE_ROLE_KEY') ?: '');
             $auth = $_SESSION['supa_access_token'] ?? ($service ?: (getenv('SUPABASE_KEY') ?: ''));
-            $folder = ((int)$effectiveSellerId).'_'.((int)$listingId);
+            $folder = ((int)$effectiveSellerId).'_'.$sanFull;
             $bucketPathPrefix = rtrim($base,'/').'/storage/v1/object/listings/underreview/'.$folder.'/';
             $idx = 1;
             foreach ($validFiles as $vf){
               $tmp = $vf['tmp'];
-              $fname = 'image'.$idx; // no extension per requirement
+              $fname = $createdKey.'_'.$idx.'img.jpg';
               $pathUrl = $bucketPathPrefix.$fname;
-              $mime = mime_content_type($tmp) ?: 'application/octet-stream';
+              $mime = mime_content_type($tmp) ?: 'image/jpeg';
               $ch = curl_init();
               curl_setopt_array($ch, [
                 CURLOPT_URL => $pathUrl,
@@ -174,7 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <div class="wrap" style="max-width:1100px;margin:0 auto;">
     <div class="top">
       <div><h1>Create Listing</h1></div>
-      <div><a class="btn" href="../dashboard.php">Back to Dashboard</a></div>
+      <div><a class="btn" href="../managelistings.php">Back</a></div>
     </div>
     <div class="card" style="max-width:900px;margin:0 auto;">
       <?php if ($message): ?>

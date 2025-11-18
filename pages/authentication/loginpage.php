@@ -38,7 +38,10 @@ $cooldown = isset($_GET['cooldown']) ? max(0, (int)$_GET['cooldown']) : 0;
             
             <div class="form-group">
                 <label for="password">Password:</label>
-                <input type="password" id="password" name="password" required>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <input type="password" id="password" name="password" required style="flex:1;">
+                    <button type="button" id="toggle-password" style="padding:8px 12px; border:1px solid #d1d5db; border-radius:6px; background:#f9fafb; cursor:pointer; font-size:14px;">Show</button>
+                </div>
             </div>
             
             <button type="submit" id="login-btn" name="login" value="login">Login</button>

@@ -2,6 +2,34 @@
 session_start();
 
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
+function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
+
+function getUserRatings($userId, $userType = 'seller') {
+  $column = $userType . '_id';
+  [$ratings, $status] = sb_rest('GET', 'userrating', [
+    'select' => 'rating,description,created_at',
+    $column => 'eq.' . $userId
+  ]);
+  
+  if ($status >= 200 && $status < 300 && is_array($ratings)) {
+    return $ratings;
+  }
+  return [];
+}
+
+function calculateAverageRating($ratings) {
+  if (empty($ratings)) return ['average' => 0, 'count' => 0];
+  
+  $total = 0;
+  foreach ($ratings as $rating) {
+    $total += (float)($rating['rating'] ?? 0);
+  }
+  
+  return [
+    'average' => round($total / count($ratings), 1),
+    'count' => count($ratings)
+  ];
+}
 
 $firstname = isset($_SESSION['firstname']) && $_SESSION['firstname'] !== '' ? $_SESSION['firstname'] : 'User';
 $userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
@@ -50,6 +78,10 @@ if ($userId) {
   }
   // Populate from found row
   if ($currentRow) { foreach ($columns as $c) { $data[$c]=$currentRow[$c]??''; } }
+  
+  // Get user ratings
+  $ratings = getUserRatings($userId, 'seller');
+  $ratingData = calculateAverageRating($ratings);
 } else { $notice='You are not logged in.'; }
 ?>
 <!DOCTYPE html>
@@ -77,12 +109,36 @@ if ($userId) {
         <div class="field"><label>Province</label><input name="province" type="text" value="<?php echo htmlspecialchars($data['province']); ?>" /></div>
         <div class="field"><label>Email</label><input type="email" value="<?php echo htmlspecialchars($data['email']); ?>" readonly /></div>
         <div class="field"><label>RSBSA Number</label><input type="text" value="<?php echo htmlspecialchars($data['rsbsanum']); ?>" readonly /></div>
+        <div class="field">
+          <label>User Rating</label>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 24px; font-weight: bold; color: #f59e0b;"><?php echo $ratingData['average']; ?> ⭐</span>
+            <span style="color: #6b7280;">(<?php echo $ratingData['count']; ?> rating<?php echo $ratingData['count'] !== 1 ? 's' : ''; ?>)</span>
+          </div>
+        </div>
         <div class="actions">
           <a class="secondary" href="../dashboard.php">Back</a>
-          <button class="ghost" type="button">Reset password</button>
+          <button id="btn-reset" class="ghost" type="button">Reset password</button>
           <button class="primary" type="submit">Save changes</button>
         </div>
       </form>
     </div>
   </div>
+<script>
+  (function(){
+    var btn = document.getElementById('btn-reset');
+    if (!btn) return;
+    btn.addEventListener('click', async function(){
+      try{
+        var emailInput = document.querySelector('input[type="email"]');
+        var email = emailInput ? emailInput.value : '';
+        if (!email){ alert('No email found for this account.'); return; }
+        const res = await fetch('../../../authentication/reset_password_request.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email }) });
+        const data = await res.json();
+        if (!data.ok) { alert(data.error || 'Failed to send reset email'); return; }
+        alert('Password reset email sent. Please check your inbox.');
+      }catch(e){ alert('Network error'); }
+    });
+  })();
+ </script>
 </body></html>

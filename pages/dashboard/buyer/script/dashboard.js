@@ -5,6 +5,12 @@ document.addEventListener('DOMContentLoaded', function(){
   navigator.geolocation.getCurrentPosition(function(pos){
     var lat = pos.coords.latitude; var lng = pos.coords.longitude;
     setStatus('Your location: ' + lat.toFixed(6) + ', ' + lng.toFixed(6));
+    try {
+      if (window.buyerMap && window.L){
+        window.buyerMap.setView([lat, lng], 15);
+        L.marker([lat, lng]).addTo(window.buyerMap);
+      }
+    } catch(e){}
     var fd = new FormData(); fd.append('lat', lat); fd.append('lng', lng);
     fetch('../update_location.php', { method:'POST', body: fd, credentials:'same-origin' }).catch(function(){});
   }, function(){

@@ -16,7 +16,7 @@
                 <span>InnoVision</span>
             </div>
             <div class="nav-links">
-                <a href="pages/testing.php">AuthTesting</a>
+                <a href="/marketplace.php">Marketplace</a>
                 <a href="pages/about.html">About</a>
                 <a href="pages/features.html">Features</a>
                 <a href="pages/contact.html">Contact</a>
@@ -45,18 +45,18 @@
                 </div>
             </div>
             <div class="hero-image">
-                <div class="floating-card">
-                    <i class="fas fa-tractor"></i>
-                    <h3>Smart Farming</h3>
-                </div>
-                <div class="floating-card">
-                    <i class="fas fa-handshake"></i>
-                    <h3>Direct Trade</h3>
-                </div>
-                <div class="floating-card">
-                    <i class="fas fa-chart-line"></i>
-                    <h3>Market Insights</h3>
-                </div>
+                <a class="floating-card" href="marketplace.php?type=Swine" title="Browse Swine">
+                    <img src="https://i.pinimg.com/736x/05/6f/a6/056fa6a809d6db19928c1c4cec9c3fa8.jpg" alt="Swine">
+                    <h3>Swine</h3>
+                </a>
+                <a class="floating-card" href="marketplace.php?type=Cattle" title="Browse Cattle">
+                    <img src="https://i.pinimg.com/1200x/f6/54/48/f65448c6beef0dc09956091339bb59f2.jpg" alt="Cattle">
+                    <h3>Cattle</h3>
+                </a>
+                <a class="floating-card" href="marketplace.php?type=Goat" title="Browse Goat">
+                    <img src="https://i.pinimg.com/736x/a3/78/57/a37857448942d410d3f35ad242b31d91.jpg" alt="Goat">
+                    <h3>Goat</h3>
+                </a>
             </div>
         </div>
     </main>
@@ -67,24 +67,27 @@
             <div class="features-grid">
                 <div class="feature-card">
                     <div class="feature-icon">
-                        <i class="fas fa-users"></i>
+                        <i class="fas fa-cattle"></i>
                     </div>
-                    <h3>For Farmers</h3>
-                    <p>Connect directly with buyers, showcase your products, and grow your business with our seller tools.</p>
+                    <h3>Cattle</h3>
+                    <p>Recent Price Changes: <span id="cattle_price"></span></p>
+                    <div class="breed-list"><ul id="cattle_breeds" style="list-style:none;padding:0;margin:8px 0;display:grid;gap:6px"></ul></div>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">
-                        <i class="fas fa-shopping-cart"></i>
+                        <i class="fas fa-pig"></i>
                     </div>
-                    <h3>For Buyers</h3>
-                    <p>Discover fresh, local products directly from farmers with transparent pricing and quality assurance.</p>
+                    <h3>Swine</h3>
+                    <p>Recent Price Changes: <span id="swine_price"></span></p>
+                    <div class="breed-list"><ul id="swine_breeds" style="list-style:none;padding:0;margin:8px 0;display:grid;gap:6px"></ul></div>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">
-                        <i class="fas fa-shield-alt"></i>
+                        <i class="fas fa-sheep"></i>
                     </div>
-                    <h3>Secure Platform</h3>
-                    <p>Your data and transactions are protected with enterprise-grade security and verification systems.</p>
+                    <h3>Goat</h3>
+                    <p>Recent Price Changes: <span id="goat_price"></span></p>
+                    <div class="breed-list"><ul id="goat_breeds" style="list-style:none;padding:0;margin:8px 0;display:grid;gap:6px"></ul></div>
                 </div>
             </div>
         </div>
@@ -131,7 +134,7 @@
                     <p>Empowering agricultural communities through technology and innovation.</p>
                 </div>
                 <div class="footer-section">
-                    <h4>Support(ongoing dev)</h4>
+                    <h4>Support</h4>
                     <ul>
                         <li><a href="#help">Help Center</a></li>
                         <li><a href="#contact">Contact Us</a></li>
@@ -144,5 +147,6 @@
             </div>
         </div>
     </footer>
+  <script src="pages/script/pricewatch.js"></script>
 </body>
 </html>

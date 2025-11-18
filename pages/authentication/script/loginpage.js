@@ -19,4 +19,20 @@ document.addEventListener('DOMContentLoaded', function(){
       }
     }, 1000);
   }
+
+  // Password toggle functionality
+  var togglePasswordBtn = document.getElementById('toggle-password');
+  var passwordInput = document.getElementById('password');
+  
+  if (togglePasswordBtn && passwordInput) {
+    togglePasswordBtn.addEventListener('click', function() {
+      if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        togglePasswordBtn.textContent = 'Hide';
+      } else {
+        passwordInput.type = 'password';
+        togglePasswordBtn.textContent = 'Show';
+      }
+    });
+  }
 });

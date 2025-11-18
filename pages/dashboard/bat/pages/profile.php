@@ -75,10 +75,27 @@ if ($userId) {
         <div class="field"><label>Assigned Barangay</label><input name="assigned_barangay" type="text" value="<?php echo htmlspecialchars($data['assigned_barangay']); ?>" /></div>
         <div class="actions">
           <a class="secondary" href="../dashboard.php">Back</a>
-          <button class="ghost" type="button">Reset password</button>
+          <button id="btn-reset" class="ghost" type="button">Reset password</button>
           <button class="primary" type="submit">Save changes</button>
         </div>
       </form>
     </div>
   </div>
+<script>
+  (function(){
+    var btn = document.getElementById('btn-reset');
+    if (!btn) return;
+    btn.addEventListener('click', async function(){
+      try{
+        var emailInput = document.querySelector('input[type="email"]');
+        var email = emailInput ? emailInput.value : '';
+        if (!email){ alert('No email found for this account.'); return; }
+        const res = await fetch('../../../authentication/reset_password_request.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email }) });
+        const data = await res.json();
+        if (!data.ok) { alert(data.error || 'Failed to send reset email'); return; }
+        alert('Password reset email sent. Please check your inbox.');
+      }catch(e){ alert('Network error'); }
+    });
+  })();
+ </script>
 </body></html>

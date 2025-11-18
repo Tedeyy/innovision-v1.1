@@ -1,7 +1,9 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
+require_once __DIR__ . '/../../../authentication/lib/use_case_logger.php';
 
+function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 // Inline endpoint to sign and fetch supporting document URL
 if (isset($_GET['doc']) && $_GET['doc'] === '1'){
   header('Content-Type: application/json');
@@ -250,6 +252,17 @@ if (isset($_GET['decide'])){
     $detail = is_array($ires)? json_encode($ires) : (string)$ires;
     echo json_encode(['ok'=>false,'error'=>'insert failed (http '.$ist.')','detail'=>$detail]); exit;
   }
+  
+  // Log use case: Admin approved/denied user
+  $action_desc = $action === 'approve' ? 'User Approved by Admin' : 'User Denied by Admin';
+  $purpose = format_use_case_description($action_desc, [
+    'user_id' => $id,
+    'role' => $role,
+    'name' => trim(($fname ?: '') . ' ' . ($mname ?: '') . ' ' . ($lname ?: '')),
+    'email' => $email,
+    'username' => $row['username'] ?? ''
+  ]);
+  log_use_case($purpose);
 
   // Try to locate and move/copy image
   $base = function_exists('sb_base_url') ? sb_base_url() : (getenv('SUPABASE_URL') ?: '');
