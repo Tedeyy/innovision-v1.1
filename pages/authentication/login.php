@@ -213,28 +213,70 @@ function insert_login_log($baseUrl, $apiKey, $userId, $ip, $userRole){
     curl_close($ch);
 }
 
-function insert_suspicious_log($baseUrl, $apiKey, $username, $ip){
-    $payload = [[
+function insert_suspicious_log($baseUrl, $apiKey, $username, $ip, $reason = '') {
+    $ch = curl_init("$baseUrl/rest/v1/suspicious_login_attempts");
+    $payload = [
         'username' => $username,
         'ip_address' => $ip,
-        'incident_report' => 'Unsucessful Login Attempts'
-    ]];
-    $url = rtrim($baseUrl,'/').'/rest/v1/suspicious_login_attempts';
-    $ch = curl_init();
+        'incident_report' => $reason ?: 'Suspicious login attempt',
+        'log_time' => date('Y-m-d H:i:s'),
+        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown',
+        'request_uri' => $_SERVER['REQUEST_URI'] ?? '',
+        'http_referer' => $_SERVER['HTTP_REFERER'] ?? ''
+    ];
+    
+    $headers = [
+        'Authorization: Bearer '.$apiKey,
+        'Content-Type: application/json',
+        'Prefer: return=minimal'
+    ];
+    
     curl_setopt_array($ch, [
-        CURLOPT_URL => $url,
-        CURLOPT_POST => true,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => [
-            'apikey: '.$apiKey,
-            'Authorization: Bearer '.$apiKey,
-            'Content-Type: application/json',
-            'Prefer: return=minimal'
-        ],
-        CURLOPT_POSTFIELDS => json_encode($payload)
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => json_encode($payload),
+        CURLOPT_TIMEOUT => 3, // 3 second timeout
+        CURLOPT_FAILONERROR => false // Don't fail on HTTP error status codes
     ]);
-    curl_exec($ch);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
     curl_close($ch);
+    
+    // Log any errors to PHP error log
+    if ($error || ($httpCode >= 400 && $httpCode <= 599)) {
+        error_log(sprintf(
+            'Failed to log suspicious login attempt. HTTP %d: %s. Error: %s',
+            $httpCode,
+            $response ?: 'No response',
+            $error ?: 'None'
+        ));
+    }
+}
+
+// Check login attempts and apply rate limiting
+$ip = client_ip();
+$loginAttempts = $_SESSION['login_attempts'][$username] ?? 0;
+$lastAttemptTime = $_SESSION['last_attempt_time'][$username] ?? 0;
+$currentTime = time();
+
+// Check if user is in cooldown
+if ($loginAttempts >= 3) {
+    $timeSinceLastAttempt = $currentTime - $lastAttemptTime;
+    $cooldownPeriod = 180; // 3 minutes in seconds
+    
+    if ($timeSinceLastAttempt < $cooldownPeriod) {
+        $remainingTime = $cooldownPeriod - $timeSinceLastAttempt;
+        // Log suspicious attempt
+        insert_suspicious_log($baseUrl, $apiKey, $username, $ip, 'Too many failed login attempts');
+        redirect_with_error_and_cooldown('Too many failed attempts. Please try again later.', $remainingTime);
+    } else {
+        // Reset attempts if cooldown period has passed
+        $loginAttempts = 0;
+        $_SESSION['login_attempts'][$username] = 0;
+    }
 }
 
 // Define user groups with priority order
@@ -325,15 +367,33 @@ if (function_exists('session_regenerate_id')) {
 }
 
 // Set basic session data
-$_SESSION = [
-    'user_id' => $userId,
-    'username' => $found['username'] ?? $username,
-    'role' => $role,
-    'source_table' => $table_found,
-    'last_activity' => $now,
-    'ip_address' => $ip,
-    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? ''
-];
+if ($user) {
+    // Reset login attempts on successful login
+    unset($_SESSION['login_attempts'][$username]);
+    unset($_SESSION['last_attempt_time'][$username]);
+    
+    $userRole = $user['role'] ?? 'user';
+    $userId = $user['id'] ?? null;
+    $_SESSION = [
+        'user_id' => $userId,
+        'username' => $found['username'] ?? $username,
+        'role' => $role,
+        'source_table' => $table_found,
+        'last_activity' => $now,
+        'ip_address' => $ip,
+        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? ''
+    ];
+} else {
+    $_SESSION = [
+        'user_id' => $userId,
+        'username' => $found['username'] ?? $username,
+        'role' => $role,
+        'source_table' => $table_found,
+        'last_activity' => $now,
+        'ip_address' => $ip,
+        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? ''
+    ];
+}
 
 // Add user details
 $fname = $found['user_fname'] ?? '';
