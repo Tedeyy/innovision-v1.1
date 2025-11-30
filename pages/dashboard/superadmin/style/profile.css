@@ -1,0 +1,146 @@
+/* Superadmin Profile Styles */
+
+/* Contact Verification Styles */
+.contact-verification {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.contact-verification input[type="text"] {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.verification-status {
+  font-size: 12px;
+  margin-top: 4px;
+  color: #666;
+  display: block;
+}
+
+.verification-message {
+  font-size: 0.85em;
+  margin-top: 5px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  display: none;
+}
+
+.verification-message.error {
+  color: #dc3545;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+}
+
+.verification-message.success {
+  color: #155724;
+  background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+}
+
+.verification-message.info {
+  color: #0c5460;
+  background-color: #d1ecf1;
+  border: 1px solid #bee5eb;
+}
+
+.verified-badge {
+  color: #28a745;
+  font-weight: 600;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 10px;
+}
+
+.verified-badge i {
+  font-size: 16px;
+}
+
+.verify-btn {
+  padding: 6px 12px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 10px;
+  white-space: nowrap;
+}
+
+.verify-btn:hover {
+  background: #45a049;
+}
+
+.verify-btn:disabled {
+  background: #cccccc;
+  cursor: not-allowed;
+}
+
+/* Modal Styles */
+#verificationModal .modal-body {
+  text-align: center;
+  padding: 25px;
+}
+
+#verificationModal .otp-input {
+  letter-spacing: 10px;
+  font-size: 24px;
+  text-align: center;
+  width: 100%;
+  margin: 20px 0;
+  padding: 10px;
+  border: 2px solid #dee2e6;
+  border-radius: 4px;
+}
+
+#verificationModal .countdown {
+  font-size: 0.9em;
+  color: #6c757d;
+  margin: 10px 0 20px;
+}
+
+#verificationModal .resend-otp {
+  margin: 15px 0 5px;
+}
+
+#verificationModal .resend-otp a {
+  color: #007bff;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+#verificationModal .resend-otp a:hover {
+  text-decoration: underline;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 576px) {
+  .contact-verification {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .contact-verification input[type="text"] {
+    width: 100%;
+  }
+  
+  .verify-btn {
+    margin-left: 0;
+    margin-top: 5px;
+    width: 100%;
+  }
+  
+  #verificationModal .otp-input {
+    font-size: 20px;
+    letter-spacing: 5px;
+    padding: 8px;
+  }
+}

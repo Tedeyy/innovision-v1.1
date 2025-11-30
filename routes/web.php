@@ -15,6 +15,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    
+    // Contact Verification Routes
+    Route::post('/verification/send-otp', [\App\Http\Controllers\ContactVerificationController::class, 'sendOtp'])
+        ->name('verification.send-otp');
+    Route::post('/verification/verify-otp', [\App\Http\Controllers\ContactVerificationController::class, 'verifyOtp'])
+        ->name('verification.verify-otp');
 });
 
 require __DIR__.'/auth.php';
