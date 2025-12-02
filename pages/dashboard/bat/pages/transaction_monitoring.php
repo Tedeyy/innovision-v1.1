@@ -162,6 +162,25 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
     .table{width:100%;border-collapse:collapse}
     .table th,.table td{padding:8px;text-align:left}
     .table thead tr{border-bottom:1px solid #e2e8f0}
+    @media (max-width:640px){
+      /* Smaller base font for entire page */
+      body{font-size:12px}
+      .wrap{font-size:12px}
+      h1{font-size:18px}
+      h2{font-size:14px}
+      .section{margin-bottom:8px}
+      .table{table-layout:fixed;font-size:11px;word-wrap:break-word}
+      .table th,.table td{padding:4px}
+      .top .btn{padding:5px 8px;font-size:11px}
+      .panel{max-width:95vw}
+      /* Modal content compaction */
+      #txBody img{width:88px !important;height:88px !important}
+      #txBody input[type="text"]{width:160px !important;max-width:55vw}
+      #txBody input[type="datetime-local"]{font-size:12px;padding:3px 6px}
+      #txMap{height:200px !important}
+      .panel h2{font-size:14px}
+      .btn{padding:5px 8px;font-size:11px}
+    }
   </style>
 </head>
 <body>
@@ -322,7 +341,8 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
           var data = {};
           try{ data = JSON.parse(e.target.getAttribute('data-row')||'{}'); }catch(_){ data={}; }
           var isOngoing = !!(data && (data.bat_id || data.Bat_id || data.transaction_date || data.Transaction_date));
-          document.getElementById('txTitle').textContent = (isOngoing? 'Ongoing' : (data.completed_transaction? 'Completed' : 'Started')) + ' Transaction #'+(data.transaction_id||'');
+          var isCompleted = !!(data && (data.completed_transaction || data.completed_Transaction));
+          document.getElementById('txTitle').textContent = (isCompleted? 'Completed' : (isOngoing? 'Ongoing' : 'Started')) + ' Transaction #'+(data.transaction_id||'');
           var txBody = document.getElementById('txBody');
           var locVal = (data.transaction_location || data.Transaction_location || '').toString().trim();
           var whenVal = data.transaction_date || data.Transaction_date || '';
@@ -355,18 +375,28 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
                     '<div><div style="font-weight:600;">Buyer</div><div>'+fullname(buyer)+'</div><div>Email: '+(buyer.email||'')+'</div><div>Contact: '+(buyer.contact||'')+'</div></div>'+
                   '</div>'+
                 '</div>'+
-                '<div class="card" style="padding:12px;margin-top:10px;">'+
-                  '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">'+
-                    '<div><strong>Date & Time:</strong> <input type="datetime-local" id="txDateTime" value="'+(whenVal||'')+'" style="margin-left:8px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;" /></div>'+
-                    '<div><strong>Location:</strong> <input type="text" id="txLocation" value="'+(locVal||'')+'" placeholder="lat,lng (e.g., 8.314209,124.859425)" style="margin-left:8px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;width:300px;" /></div>'+
-                  '</div>'+
-                  '<div style="margin-bottom:8px;color:#4a5568;font-size:12px;">💡 Click anywhere on the map to set the meet-up location</div>'+
-                  '<div id="txMap" style="height:260px;border:1px solid #e2e8f0;border-radius:8px;cursor:crosshair;" title="Click anywhere on the map to set meet-up location"></div>'+
-                  '<div style="margin-top:12px;display:flex;gap:8px;">'+
-                    '<button class="btn" id="btnSaveTx">Save Meet-up Details</button>'+
-                    '<span id="saveStatus" style="color:#4a5568;font-size:12px;"></span>'+
-                  '</div>'+
-                '</div>';
+                (isCompleted ? (
+                  '<div class="card" style="padding:12px;margin-top:10px;">'+
+                    '<div style="display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:8px;">'+
+                      '<div><strong>Date & Time:</strong> '+(whenVal||'')+'</div>'+
+                      '<div><strong>Location:</strong> '+(locVal||'')+'</div>'+
+                    '</div>'+
+                    '<div id="txMap" style="height:260px;border:1px solid #e2e8f0;border-radius:8px;"></div>'+
+                  '</div>'
+                ) : (
+                  '<div class="card" style="padding:12px;margin-top:10px;">'+
+                    '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">'+
+                      '<div><strong>Date & Time:</strong> <input type="datetime-local" id="txDateTime" value="'+(whenVal||'')+'" style="margin-left:8px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;" /></div>'+
+                      '<div><strong>Location:</strong> <input type="text" id="txLocation" value="'+(locVal||'')+'" placeholder="lat,lng (e.g., 8.314209,124.859425)" style="margin-left:8px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;width:300px;" /></div>'+
+                    '</div>'+
+                    '<div style="margin-bottom:8px;color:#4a5568;font-size:12px;">💡 Click anywhere on the map to set the meet-up location</div>'+
+                    '<div id="txMap" style="height:260px;border:1px solid #e2e8f0;border-radius:8px;cursor:crosshair;" title="Click anywhere on the map to set meet-up location"></div>'+
+                    '<div style="margin-top:12px;display:flex;gap:8px;">'+
+                      '<button class="btn" id="btnSaveTx">Save Meet-up Details</button>'+
+                      '<span id="saveStatus" style="color:#4a5568;font-size:12px;"></span>'+
+                    '</div>'+
+                  '</div>'
+                ));
               txBody.innerHTML = bodyHtml;
               // Open modal first so map can compute size
               openModal('txModal');
@@ -375,28 +405,41 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
                 if (!window.L){ return; }
                 var mEl = document.getElementById('txMap'); if (!mEl) return;
                 destroyTxMap();
-                currentTxMap = L.map(mEl).setView([8.314209 , 124.859425], 12);
+                if (isCompleted){
+                  currentTxMap = L.map(mEl, {
+                    zoomControl: false,
+                    attributionControl: false,
+                    dragging: false,
+                    scrollWheelZoom: false,
+                    doubleClickZoom: false,
+                    boxZoom: false,
+                    keyboard: false,
+                    tap: false,
+                  }).setView([8.314209 , 124.859425], 12);
+                } else {
+                  currentTxMap = L.map(mEl).setView([8.314209 , 124.859425], 12);
+                }
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(currentTxMap);
                 currentTxMap.on('tileload', function(){ try{ currentTxMap.invalidateSize(); }catch(e){} });
-                
-                // Add click handler to set location
-                currentTxMap.on('click', function(e) {
-                  var lat = e.latlng.lat.toFixed(6);
-                  var lng = e.latlng.lng.toFixed(6);
-                  var locationInput = document.getElementById('txLocation');
-                  if (locationInput) {
-                    locationInput.value = lat + ',' + lng;
-                    // Update or create marker
-                    if (currentTxMarker) {
-                      currentTxMarker.setLatLng([lat, lng]);
-                    } else {
-                      currentTxMarker = L.marker([lat, lng]).addTo(currentTxMap);
+
+                if (!isCompleted){
+                  // Add click handler to set location
+                  currentTxMap.on('click', function(e) {
+                    var lat = e.latlng.lat.toFixed(6);
+                    var lng = e.latlng.lng.toFixed(6);
+                    var locationInput = document.getElementById('txLocation');
+                    if (locationInput) {
+                      locationInput.value = lat + ',' + lng;
+                      if (currentTxMarker) {
+                        currentTxMarker.setLatLng([lat, lng]);
+                      } else {
+                        currentTxMarker = L.marker([lat, lng]).addTo(currentTxMap);
+                      }
+                      currentTxMap.setView([lat, lng], 15);
                     }
-                    // Update view to zoom in on clicked location
-                    currentTxMap.setView([lat, lng], 15);
-                  }
-                });
-                
+                  });
+                }
+
                 if (locVal && locVal.indexOf(',')>0){
                   var parts = locVal.split(',');
                   var la = parseFloat((parts[0]||'').trim()); var ln = parseFloat((parts[1]||'').trim());
@@ -407,20 +450,18 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
                 setTimeout(function(){ try{ currentTxMap.invalidateSize(); }catch(e){} }, 50);
               }, 50);
               
-              // Add save button event listener
+              // Add save button handler only for non-completed transactions
               var saveBtn = document.getElementById('btnSaveTx');
               var saveStatus = document.getElementById('saveStatus');
-              if (saveBtn && saveStatus) {
+              if (!isCompleted && saveBtn && saveStatus) {
                 saveBtn.addEventListener('click', function() {
                   var dateTime = document.getElementById('txDateTime').value;
                   var location = document.getElementById('txLocation').value;
-                  
                   if (!dateTime || !location) {
                     saveStatus.textContent = 'Please fill in both date/time and location';
                     saveStatus.style.color = '#e53e3e';
                     return;
                   }
-                  
                   var fd = new FormData();
                   fd.append('action', 'set_schedule');
                   fd.append('transaction_id', data.transaction_id || '');
@@ -429,27 +470,19 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
                   fd.append('buyer_id', data.buyer_id || '');
                   fd.append('transaction_date', dateTime);
                   fd.append('transaction_location', location);
-                  
                   saveBtn.disabled = true;
                   saveBtn.textContent = 'Saving...';
                   saveStatus.textContent = '';
-                  
                   fetch('transaction_monitoring.php', { method:'POST', body:fd, credentials:'same-origin' })
                     .then(function(r){ return r.json(); })
                     .then(function(res){
                       saveBtn.disabled = false;
                       saveBtn.textContent = 'Save Meet-up Details';
-                      
                       if (res && res.ok) {
                         saveStatus.textContent = 'Saved successfully!';
                         saveStatus.style.color = '#38a169';
-                        if (res.warning) {
-                          saveStatus.textContent += ' (' + res.warning + ')';
-                        }
-                        // Update the displayed values
-                        locVal = location;
-                        whenVal = dateTime;
-                        // Update map if location changed
+                        if (res.warning) { saveStatus.textContent += ' (' + res.warning + ')'; }
+                        locVal = location; whenVal = dateTime;
                         if (location && location.indexOf(',')>0){
                           var parts = location.split(',');
                           var la = parseFloat((parts[0]||'').trim()); var ln = parseFloat((parts[1]||'').trim());

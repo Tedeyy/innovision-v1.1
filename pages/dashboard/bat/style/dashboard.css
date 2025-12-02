@@ -4,6 +4,7 @@ body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:
 h1{margin:0 0 12px}
 .meta{color:#4a5568;margin-bottom:16px}
 a.btn{display:inline-block;margin-top:12px;padding:10px 16px;border-radius:10px;background:#805ad5;color:#fff;text-decoration:none}
+.btn{display:inline-block;margin-top:12px;padding:10px 16px;border-radius:10px;background:#805ad5;color:#fff;text-decoration:none;border:none;cursor:pointer}
 .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 
 .navbar{display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px 16px;margin-bottom:16px;box-shadow:0 6px 20px rgba(0,0,0,.04)}
@@ -26,4 +27,37 @@ a.btn{display:inline-block;margin-top:12px;padding:10px 16px;border-radius:10px;
 @media (max-width: 640px){
   .hamburger{display:flex}
   .nav-center{display:none !important}
+  body{padding:8px}
+  .wrap{max-width:100%}
+  .navbar{padding:8px 10px;margin-bottom:10px}
+  .nav-left{gap:8px}
+  .nav-right{gap:8px}
+  .brand{font-size:16px}
+  .greeting{font-size:12px}
+  .search{display:none}
+  .card{padding:12px;border-radius:10px}
+  h1{font-size:20px;margin-bottom:8px}
+  h2{font-size:16px}
+  .btn{padding:6px 10px;font-size:12px;border-radius:8px;margin-top:8px}
+  a.btn{padding:6px 10px;font-size:12px;border-radius:8px;margin-top:8px}
+  /* Stats grid: ensure compact columns */
+  .wrap .card > div[style*="grid-template-columns:repeat(3,1fr)"]{gap:8px}
+  .wrap .card > div[style*="grid-template-columns:repeat(3, 1fr)"]{gap:8px}
+  /* Map and charts: override inline heights */
+  #batMap{height:260px !important}
+  .chartbox{height:220px !important}
+  /* Calendar scaling */
+  #calendar{font-size:12px}
+  .profile .avatar{width:28px;height:28px}
+  /* Leaflet tooltip text smaller */
+  .leaflet-tooltip.bat-pin-tt{font-size:10px}
+  /* Reorder nav on mobile: left -> (greeting+notif) -> hamburger */
+  .navbar{display:flex}
+  .nav-left{order:1}
+  .nav-right{order:2; align-items:center}
+  .hamburger{order:3; margin-left:auto}
+  /* Hide Logout and Profile in navbar */
+  .nav-right .btn,
+  .nav-right .profile{display:none !important}
 }
+

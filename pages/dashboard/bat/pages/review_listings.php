@@ -46,6 +46,17 @@ function fetch_seller($seller_id){
     .detail-images img{width:140px;height:140px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;cursor:zoom-in}
     #img-modal{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;z-index:9999}
     #img-modal img{max-width:90vw;max-height:90vh;border-radius:8px;box-shadow:0 10px 25px rgba(0,0,0,0.5);background:#000}
+    @media (max-width:640px){
+      h1{font-size:20px}
+      h2{font-size:16px}
+      .card{padding:12px}
+      .row{grid-template-columns:100px 1fr 90px;gap:8px}
+      .thumbs img{width:96px;height:96px;margin-right:6px}
+      .detail-images img{width:110px;height:110px}
+      .map{height:140px}
+      .btn{padding:6px 10px;font-size:12px;border-radius:8px}
+      .muted{font-size:11px}
+    }
   </style>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
