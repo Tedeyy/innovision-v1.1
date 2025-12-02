@@ -61,6 +61,18 @@ foreach ($typeNames as $i=>$tn){
     'pointRadius' => 0
   ];
 }
+
+// Admin counters: users to review, listings to review, reports, penalties
+function sb_count($table, $params){
+  [$rows,$st,$err] = sb_rest('GET',$table,$params);
+  return ($st>=200 && $st<300 && is_array($rows)) ? count($rows) : 0;
+}
+$countSeller  = sb_count('reviewseller', ['select'=>'user_id']);
+$countBuyer   = sb_count('reviewbuyer',  ['select'=>'user_id']);
+$countBat     = sb_count('reviewbat',    ['select'=>'user_id']);
+$countListings= sb_count('reviewlivestocklisting', ['select'=>'listing_id']);
+$countReports = sb_count('reviewreportuser', ['select'=>'report_id']);
+$countPenalty = sb_count('penalty', ['select'=>'id']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -84,12 +96,7 @@ foreach ($typeNames as $i=>$tn){
             <span></span>
             <span></span>
         </div>
-        <div class="nav-center" style="display:flex;gap:16px;align-items:center;">
-            <a class="btn" href="pages/usermanagement.php" style="background:#4a5568;">Users</a>
-            <a class="btn" href="pages/listingmanagement.php" style="background:#4a5568;">Listings</a>
-            <a class="btn" href="pages/report_management.php" style="background:#4a5568;">Report Management</a>
-            <a class="btn" href="pages/analytics.php" style="background:#4a5568;">Analytics</a>
-        </div>
+        <div class="nav-center" style="display:flex;gap:16px;align-items:center;"></div>
         <div class="nav-right">
             <div class="greeting">hello <?php echo htmlspecialchars($firstname, ENT_QUOTES, 'UTF-8'); ?> • <?php echo htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8'); ?></div>
             <a class="btn" href="../logout.php">Logout</a>
@@ -104,12 +111,11 @@ foreach ($typeNames as $i=>$tn){
     </nav>
     <!-- Mobile Menu -->
     <div class="mobile-menu">
-        <a href="pages/usermanagement.php">Users</a>
-        <a href="pages/listingmanagement.php">Listings</a>
-        <a href="pages/report_management.php">Report Management</a>
-        <a href="pages/analytics.php">Analytics</a>
-        <a href="../logout.php">Logout</a>
         <a href="pages/profile.php">Profile</a>
+        <a href="pages/usermanagement.php">User Management</a>
+        <a href="pages/listingmanagement.php">Listing Review</a>
+        <a href="pages/report_management.php">Report Management</a>
+        <a href="../logout.php">Logout</a>
     </div>
     <div class="menu-overlay"></div>
     <div id="notifPane" style="display:none;position:fixed;top:56px;right:16px;width:300px;max-height:50vh;overflow:auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 20px rgba(0,0,0,.08);z-index:10000;">
@@ -120,10 +126,44 @@ foreach ($typeNames as $i=>$tn){
     </div>
     <div class="wrap">
         <div class="top">
-            <div>
-                <h1>Admin Dashboard</h1>
+        </div>
+        <!-- Users to Review -->
+        <div class="card">
+            <h3 style="margin-top:0">Users Pending Review</h3>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:10px 0;">
+                <div class="card" style="padding:12px;">
+                    <div style="color:#4a5568;font-size:12px;">Sellers</div>
+                    <div style="font-size:20px;font-weight:600;"><?php echo (int)$countSeller; ?></div>
+                </div>
+                <div class="card" style="padding:12px;">
+                    <div style="color:#4a5568;font-size:12px;">Buyers</div>
+                    <div style="font-size:20px;font-weight:600;"><?php echo (int)$countBuyer; ?></div>
+                </div>
+                <div class="card" style="padding:12px;">
+                    <div style="color:#4a5568;font-size:12px;">BAT</div>
+                    <div style="font-size:20px;font-weight:600;"><?php echo (int)$countBat; ?></div>
+                </div>
+            </div>
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+                <a class="btn" href="pages/usermanagement.php">Go to User Management</a>
             </div>
         </div>
+
+        <!-- Listings to Review -->
+        <div class="card">
+            <h3 style="margin-top:0">Listings Pending Review</h3>
+            <div style="display:grid;grid-template-columns:1fr;gap:12px;margin:10px 0;">
+                <div class="card" style="padding:12px;">
+                    <div style="color:#4a5568;font-size:12px;">Listings</div>
+                    <div style="font-size:20px;font-weight:600;"><?php echo (int)$countListings; ?></div>
+                </div>
+            </div>
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+                <a class="btn" href="pages/listingmanagement.php" style="background:#4a5568;">Manage Listings</a>
+            </div>
+        </div>
+
+        <!-- Price Management (kept after listing counter) -->
         <div class="card">
             <h3 style="margin-top:0">Price Management</h3>
             <?php
@@ -194,8 +234,22 @@ foreach ($typeNames as $i=>$tn){
                 })();
             </script>
         </div>
+        <!-- Reports and Penalties -->
         <div class="card">
-            <p>Use this space to manage users, view system stats, and oversee platform content.</p>
+            <h3 style="margin-top:0">User Reports & Penalties</h3>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:10px 0;">
+                <div class="card" style="padding:12px;">
+                    <div style="color:#4a5568;font-size:12px;">Reports Pending Review</div>
+                    <div style="font-size:20px;font-weight:600;"><?php echo (int)$countReports; ?></div>
+                </div>
+                <div class="card" style="padding:12px;">
+                    <div style="color:#4a5568;font-size:12px;">Users Under Penalty</div>
+                    <div style="font-size:20px;font-weight:600;"><?php echo (int)$countPenalty; ?></div>
+                </div>
+            </div>
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+                <a class="btn" href="pages/report_management.php" style="background:#4a5568;">Review Reports</a>
+            </div>
         </div>
 
         <div class="card">
