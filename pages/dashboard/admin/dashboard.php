@@ -79,6 +79,11 @@ foreach ($typeNames as $i=>$tn){
                 <input type="search" name="q" placeholder="Search" />
             </form>
         </div>
+        <div class="hamburger" aria-label="Toggle menu">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
         <div class="nav-center" style="display:flex;gap:16px;align-items:center;">
             <a class="btn" href="pages/usermanagement.php" style="background:#4a5568;">Users</a>
             <a class="btn" href="pages/listingmanagement.php" style="background:#4a5568;">Listings</a>
@@ -97,6 +102,16 @@ foreach ($typeNames as $i=>$tn){
             </a>
         </div>
     </nav>
+    <!-- Mobile Menu -->
+    <div class="mobile-menu">
+        <a href="pages/usermanagement.php">Users</a>
+        <a href="pages/listingmanagement.php">Listings</a>
+        <a href="pages/report_management.php">Report Management</a>
+        <a href="pages/analytics.php">Analytics</a>
+        <a href="../logout.php">Logout</a>
+        <a href="pages/profile.php">Profile</a>
+    </div>
+    <div class="menu-overlay"></div>
     <div id="notifPane" style="display:none;position:fixed;top:56px;right:16px;width:300px;max-height:50vh;overflow:auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 20px rgba(0,0,0,.08);z-index:10000;">
         <div style="padding:10px 12px;border-bottom:1px solid #f3f4f6;font-weight:600;">Notifications (<span id=\"notifCount\">0</span>)</div>
         <div id="notifList" style="padding:8px 0;">
@@ -189,6 +204,7 @@ foreach ($typeNames as $i=>$tn){
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="/pages/script/mobile-menu.js"></script>
     <div id="admin-sales-data"
          data-labels='<?php echo json_encode($labels, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>'
          data-datasets='<?php echo json_encode($datasets, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>'></div>

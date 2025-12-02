@@ -27,6 +27,29 @@
     const confirm = form.querySelector('input[name="confirm_password"]');
     const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
 
+    // If redirected due to email already taken
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      if (email && params.get('email_taken') === '1'){
+        const m = createMsg(email);
+        m.textContent = 'Email already exists. Please use a different email.';
+        m.style.color = '#e53e3e';
+        email.setCustomValidity('Email already exists');
+        email.focus();
+        const banner = document.createElement('div');
+        banner.textContent = 'There was an error creating your account with this email. Please use another email address.';
+        banner.style.background = '#FEF2F2';
+        banner.style.color = '#991B1B';
+        banner.style.border = '1px solid #FCA5A5';
+        banner.style.padding = '10px 12px';
+        banner.style.margin = '0 0 12px 0';
+        banner.style.borderRadius = '6px';
+        const parent = form.parentElement || form;
+        parent.insertBefore(banner, form);
+        window.scrollTo({top: 0, behavior: 'smooth'});
+      }
+    } catch(e){}
+
     // Add Show/Hide toggle for password if one doesn't already exist
     if (password){
       const hasExistingToggle = !!form.querySelector('#toggle-password') || password.dataset.toggleAdded === '1';
