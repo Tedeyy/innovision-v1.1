@@ -92,6 +92,7 @@ $statusLabel = $isVerified ? 'Verified' : 'Under review';
         </div>
         <div id="geoStatus" style="margin-top:8px;color:#4a5568;font-size:14px"></div>
     </div>
+    <script src="/pages/script/notifications.js"></script>
     <script src="script/dashboard.js"></script>
     <script src="/pages/script/mobile-menu.js"></script>
     <script>

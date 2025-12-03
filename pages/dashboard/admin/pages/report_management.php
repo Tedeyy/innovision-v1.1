@@ -46,6 +46,12 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
     .penalty-options{display:flex;flex-direction:column;gap:8px;margin:20px 0}
     .penalty-option{display:flex;align-items:center;gap:8px}
     .penalty-option input{margin:0}
+    /* Mobile-only back button in navbar (right corner) */
+    @media (max-width:640px){
+      .nav-right .mobile-back{display:inline-block !important}
+      /* Hide other right-side buttons on mobile, keep mobile-back */
+      .nav-right .btn:not(.mobile-back){display:none !important}
+    }
     @media (max-width:640px){
       .section-card{padding:12px;border-radius:10px;margin-bottom:12px}
       .section-title{font-size:16px;margin-bottom:10px}
@@ -62,8 +68,13 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 </head>
 <body>
   <nav class="navbar">
-    <div class="nav-left"><div class="brand">Report Management</div></div>
-    <div class="nav-right"><a class="btn" href="../dashboard.php">Back to Dashboard</a></div>
+    <div class="nav-left">
+      <div class="brand">Report Management</div>
+    </div>
+    <div class="nav-right">
+      <a class="btn" href="../dashboard.php">Back to Dashboard</a>
+      <a href="../dashboard.php" class="btn mobile-back" aria-label="Back to Dashboard" title="Back" style="display:none;margin-top:0;background:#4a5568">Back</a>
+    </div>
   </nav>
   <div class="wrap">
     

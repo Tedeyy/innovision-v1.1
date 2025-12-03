@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
+require_once __DIR__ . '/../../../common/notify.php';
 
 $role = $_SESSION['role'] ?? '';
 if ($role !== 'bat'){
@@ -131,6 +132,10 @@ if (isset($_POST['action']) && $_POST['action']==='set_schedule'){
   [$sr,$ss,$se] = sb_rest('POST','schedule',[], $schedPayload, ['Prefer: return=representation']);
   $warnings = [];
   if (!($ss>=200 && $ss<300)) $warnings[] = 'Failed to create schedule entry';
+  // Notify seller about scheduled meet-up
+  $title = 'Meet-up Scheduled';
+  $msg = 'BAT scheduled: '.($whenVal ?: '').' at '.($loc ?: '');
+  notify_send((int)$sellerId, 'seller', $title, $msg, (int)$listingId, 'meetup');
   echo json_encode(['ok'=>true,'warning'=> (count($warnings)? implode('; ', $warnings) : null)]); exit;
 }
 

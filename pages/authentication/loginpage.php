@@ -67,5 +67,23 @@ $cooldown = isset($_GET['cooldown']) ? max(0, (int)$_GET['cooldown']) : 0;
     </div>
     <div id="login-data" data-cooldown="<?php echo (int)$cooldown; ?>" hidden></div>
     <script src="script/loginpage.js"></script>
+    <script>
+      (function(){
+        async function checkBlacklist(){
+          try{
+            const res = await fetch('blacklist_check.php',{cache:'no-store'});
+            const data = await res.json();
+            if (data && data.blacklisted){
+              const btn = document.getElementById('login-btn');
+              if (btn){ btn.disabled = true; btn.style.opacity = '.6'; }
+              alert('You are Blacklisted from using this website.');
+            }
+          }catch(e){ /* silent */ }
+        }
+        if (document.readyState === 'loading'){
+          document.addEventListener('DOMContentLoaded', checkBlacklist);
+        } else { checkBlacklist(); }
+      })();
+    </script>
 </body>
 </html>

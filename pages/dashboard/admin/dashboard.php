@@ -258,6 +258,7 @@ $countPenalty = sb_count('penalty', ['select'=>'id']);
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="/pages/script/notifications.js"></script>
     <script src="/pages/script/mobile-menu.js"></script>
     <div id="admin-sales-data"
          data-labels='<?php echo json_encode($labels, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>'

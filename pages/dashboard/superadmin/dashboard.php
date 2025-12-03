@@ -11,17 +11,33 @@ if ($role === 'superadmin') {
 }
 $statusLabel = $isVerified ? 'Verified' : 'Under review';
 // Fetch pending approval counts
-$preBatCount = 0; $reviewAdminCount = 0; $logs = [];
+$preBatCount = 0; $reviewAdminCount = 0;
 [$batr,$bath,$bate] = sb_rest('GET', 'preapprovalbat', ['select'=>'user_id']);
 if ($bath>=200 && $bath<300 && is_array($batr)) { $preBatCount = count($batr); }
 [$adr,$adh,$ade] = sb_rest('GET', 'reviewadmin', ['select'=>'user_id']);
 if ($adh>=200 && $adh<300 && is_array($adr)) { $reviewAdminCount = count($adr); }
-// Fetch livestock listing logs
-[$logRows,$logSt,$logErr] = sb_rest('GET','livestocklisting_logs',['select'=>'*']);
-if ($logSt>=200 && $logSt<300 && is_array($logRows)) { $logs = $logRows; }
+
+// Prepare data for sales chart (last 3 months and next month)
+$labels = [];
+$monthKeys = [];
+$now = new DateTime('first day of this month 00:00:00');
+for ($i=-3; $i<=1; $i++){
+  $d = (clone $now)->modify(($i>=0?'+':'').$i.' month');
+  $labels[] = $d->format('M');
+  $monthKeys[] = $d->format('Y-m');
+}
+// Get livestock types
+[$typesRes,$typesStatus,$typesErr] = sb_rest('GET','livestock_type',['select'=>'type_id,name']);
+$types = (is_array($typesRes)? $typesRes : []);
+// Get breeds (id, name, livestocktype_id)
+[$breedsRes,$breedsStatus,$breedsErr] = sb_rest('GET','livestockbreed',['select'=>'breed_id,name,livestocktype_id']);
+$breeds = (is_array($breedsRes)? $breedsRes : []);
+// Fetch sold listings
+[$soldRes,$soldStatus,$soldErr] = sb_rest('GET','activelivestocklisting',['select'=>'livestock_type,breed,price,created,status']);
+$soldRows = ($soldStatus>=200 && $soldStatus<300 && is_array($soldRes)) ? $soldRes : [];
+
 ?>
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -47,8 +63,6 @@ if ($logSt>=200 && $logSt<300 && is_array($logRows)) { $logs = $logRows; }
         <div class="nav-center" style="display:flex;gap:16px;align-items:center;">
             <a class="btn" href="pages/generatereports.php">Generate Reports</a>
             <a class="btn" href="pages/usermanagement.php">User Management</a>
-            <a class="btn" href="pages/price_actions.php">Price Actions</a>
-            <a class="btn" href="pages/listing_actions.php">Listing Actions</a>
             <a class="btn" href="pages/security.php">Security</a>
             <a class="btn" href="pages/price_management.php" style="background:#4a5568;">Price Management</a>
         </div>
@@ -68,8 +82,6 @@ if ($logSt>=200 && $logSt<300 && is_array($logRows)) { $logs = $logRows; }
     <div class="mobile-menu">
         <a href="pages/generatereports.php">Generate Reports</a>
         <a href="pages/usermanagement.php">User Management</a>
-        <a href="pages/price_actions.php">Price Actions</a>
-        <a href="pages/listing_actions.php">Listing Actions</a>
         <a href="pages/security.php">Security</a>
         <a href="pages/price_management.php">Price Management</a>
         <a href="../logout.php">Logout</a>
@@ -83,23 +95,37 @@ if ($logSt>=200 && $logSt<300 && is_array($logRows)) { $logs = $logRows; }
         </div>
     </div>
     <div class="wrap">
-        <div class="top">
-            <div>
-                <h1>Dashboard</h1>
+        <div class="card">
+            <h3 style="margin-top:0">Total Livestock Sold</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:8px">
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:#4a5568">Livestock Type
+                    <select id="sa-type-filter">
+                        <option value="">All</option>
+                        <?php foreach ($types as $t): ?>
+                          <option value="<?php echo htmlspecialchars($t['name']??'', ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($t['name']??('Type #'.(int)($t['type_id']??0)), ENT_QUOTES, 'UTF-8'); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:#4a5568">Breed
+                    <select id="sa-breed-filter" disabled>
+                        <option value="">All</option>
+                    </select>
+                </label>
             </div>
+            <div class="chartbox" style="width:100%;min-height:220px"><canvas id="saSalesChart"></canvas></div>
         </div>
         <div class="card">
             <p>Manage platform-wide settings and users here.</p>
         </div>
         <div class="card">
-            <h3>Pending Account Approvals</h3>
+            <h3>Management Account Approvals</h3>
             <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:12px 0;">
                 <div class="card" style="padding:12px;">
-                    <div style="color:#4a5568;font-size:12px;">BATs Waiting (preapprovalbat)</div>
+                    <div style="color:#4a5568;font-size:12px;">BATs Waiting</div>
                     <div style="font-size:20px;font-weight:600;"><?php echo (int)$preBatCount; ?></div>
                 </div>
                 <div class="card" style="padding:12px;">
-                    <div style="color:#4a5568;font-size:12px;">Admins Waiting (reviewadmin)</div>
+                    <div style="color:#4a5568;font-size:12px;">Admins Waiting</div>
                     <div style="font-size:20px;font-weight:600;"><?php echo (int)$reviewAdminCount; ?></div>
                 </div>
             </div>
@@ -113,36 +139,11 @@ if ($logSt>=200 && $logSt<300 && is_array($logRows)) { $logs = $logRows; }
 
         <div class="card">
             <h3>Livestock Listing Logs</h3>
-            <div style="overflow:auto;">
-                <table aria-label="Livestock Listing Logs" style="width:100%;border-collapse:collapse;">
-                    <thead>
-                        <tr>
-                            <?php
-                            $logHeaders = [];
-                            if (is_array($logs) && count($logs)>0) {
-                                $logHeaders = array_keys($logs[0]);
-                            }
-                            foreach ($logHeaders as $h) {
-                                echo '<th style="text-align:left;border-bottom:1px solid #e5e7eb;padding:8px 6px;">'.htmlspecialchars($h, ENT_QUOTES, 'UTF-8').'</th>';
-                            }
-                            ?>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (is_array($logs)):
-                            foreach ($logs as $row): ?>
-                                <tr>
-                                    <?php foreach ($logHeaders as $h): $v = isset($row[$h]) ? $row[$h] : ''; ?>
-                                        <td style="border-bottom:1px solid #f3f4f6;padding:8px 6px;"><?php echo htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); ?></td>
-                                    <?php endforeach; ?>
-                                </tr>
-                            <?php endforeach; endif; ?>
-                    </tbody>
-                </table>
-            </div>
+            <iframe class="embed-frame" src="pages/livestock_listing_logs.php" title="Livestock Listing Logs"></iframe>
         </div>
     </div>
-</body>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="/pages/script/notifications.js"></script>
 <script src="script/dashboard.js"></script>
 <script src="/pages/script/mobile-menu.js"></script>
 <script>
@@ -177,5 +178,64 @@ if ($logSt>=200 && $logSt<300 && is_array($logRows)) { $logs = $logRows; }
     document.addEventListener('click', function(e){ if (!pane || !btn) return; if (!pane.contains(e.target) && !btn.contains(e.target)) { pane.style.display = 'none'; } });
     render(window.NOTIFS || []);
   })();
+  // Sales chart data + filters
+  (function(){
+    const labels = <?php echo json_encode($labels, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>;
+    const sold = <?php echo json_encode($soldRows, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>;
+    const monthKeys = <?php echo json_encode($monthKeys, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>;
+    const breeds = <?php echo json_encode($breeds, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>;
+    const types = <?php echo json_encode($types, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>;
+    const typeSel = document.getElementById('sa-type-filter');
+    const breedSel = document.getElementById('sa-breed-filter');
+    const palette = ['#8B4513','#16a34a','#ec4899','#2563eb','#f59e0b','#10b981','#ef4444','#6b7280'];
+    function populateBreeds(typeName){
+      if (!breedSel) return;
+      breedSel.innerHTML = '<option value="">All</option>';
+      breedSel.disabled = !typeName;
+      if (!typeName) return;
+      // Find type_id for the selected type name
+      let typeId = null;
+      if (Array.isArray(types)){
+        const t = types.find(x => (x && (x.name||'') === typeName));
+        if (t) typeId = t.type_id;
+      }
+      const names = [];
+      if (typeId!=null){
+        breeds.filter(b=>b && b.livestocktype_id==typeId).forEach(b=>{ if (b.name) names.push(b.name); });
+      }
+      names.sort().forEach(n=>{
+        const opt=document.createElement('option'); opt.value=n; opt.textContent=n; breedSel.appendChild(opt);
+      });
+    }
+    function aggregate(typeName, breedName){
+      const totals = new Array(monthKeys.length).fill(0);
+      sold.forEach(r=>{
+        if (r.status && r.status!=='Sold') return;
+        const lt = r.livestock_type || '';
+        const br = r.breed || '';
+        if (typeName && lt!==typeName) return;
+        if (breedName && br!==breedName) return;
+        const ym = (r.created||'').slice(0,7);
+        const idx = monthKeys.indexOf(ym);
+        if (idx>-1){ totals[idx] += Number(r.price||0); }
+      });
+      return totals;
+    }
+    const ctx = document.getElementById('saSalesChart');
+    let chart;
+    function render(){
+      const t = typeSel ? typeSel.value : '';
+      const b = breedSel ? breedSel.value : '';
+      const data = aggregate(t,b);
+      const ds = [{ label: (b||t||'All Types'), data, borderColor: palette[3], backgroundColor:'transparent', tension:.3, spanGaps:true, pointRadius:0 }];
+      if (chart){ chart.destroy(); }
+      chart = new Chart(ctx, { type:'line', data:{ labels, datasets: ds }, options:{ responsive:true, maintainAspectRatio:false, scales:{ y:{ beginAtZero:true }}}});
+    }
+    if (typeSel){ typeSel.addEventListener('change', function(){ populateBreeds(this.value); breedSel && (breedSel.value=''); render(); }); }
+    if (breedSel){ breedSel.addEventListener('change', render); }
+    populateBreeds(typeSel ? typeSel.value : '');
+    render();
+  })();
 </script>
+</body>
 </html>

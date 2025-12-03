@@ -160,6 +160,7 @@ if ($sellerId){
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="/pages/script/notifications.js"></script>
     <script src="script/dashboard.js"></script>
     <script src="/pages/script/mobile-menu.js"></script>
     <script>

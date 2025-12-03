@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
+require_once __DIR__ . '/../../../common/notify.php';
 
 header('Content-Type: application/json');
 
@@ -68,6 +69,9 @@ if ($action === 'approve_report') {
             'report_id' => 'eq.' . $report_id
         ]);
         
+        // Notify buyer and seller about verified report
+        if (!empty($seller_id)) { notify_send((int)$seller_id,'seller','Report Verified','Your report has been verified by admin.', (int)$report_id,'report'); }
+        if (!empty($buyer_id))  { notify_send((int)$buyer_id,'buyer','Report Verified','A report related to you has been verified.', (int)$report_id,'report'); }
         echo json_encode(['success' => true, 'message' => 'Report approved successfully']);
     } else {
         echo json_encode(['success' => false, 'error' => $error ?? 'Failed to approve report']);
@@ -95,7 +99,8 @@ if ($action === 'approve_report') {
         ], [
             'report_id' => 'eq.' . $report_id
         ]);
-        
+        // Notify reporter that the report was disregarded (if buyer_id exists)
+        if (!empty($buyer_id)) { notify_send((int)$buyer_id,'buyer','Report Disregarded','Your report was disregarded by admin.', (int)$report_id,'report'); }
         echo json_encode(['success' => true, 'message' => 'Report disregarded successfully']);
     } else {
         echo json_encode(['success' => false, 'error' => $error ?? 'Failed to disregard report']);
@@ -145,6 +150,9 @@ if ($action === 'approve_report') {
     [$result, $status, $error] = sb_rest('POST', 'penalty_log', [], [$penaltyData]);
     
     if ($status >= 200 && $status < 300) {
+        // Notify buyer and seller of penalty
+        if (!empty($seller_id)) { notify_send((int)$seller_id,'seller','Penalty Applied','A penalty has been applied to your account.', (int)$report_id,'penalty'); }
+        if (!empty($buyer_id))  { notify_send((int)$buyer_id,'buyer','Penalty Assigned to Seller','Admin has applied a penalty to the seller.', (int)$report_id,'penalty'); }
         echo json_encode(['success' => true, 'message' => 'Penalty applied successfully']);
     } else {
         echo json_encode(['success' => false, 'error' => $error ?? 'Failed to apply penalty']);

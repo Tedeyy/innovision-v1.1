@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
+require_once __DIR__ . '/../../../common/notify.php';
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') { echo json_encode(['ok'=>false,'error'=>'Unauthorized']); exit; }
@@ -47,6 +48,8 @@ if ($action === 'create_pending'){
     'status'=>'Pending',
     'created'=>$created
   ]], ['Prefer: return=minimal']);
+  // Notify superadmin of price change request
+  notify_role('superadmin','Price Change Request','An admin submitted a price change request.');
   echo json_encode(['ok'=>true]);
   exit;
 }

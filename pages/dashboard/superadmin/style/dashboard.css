@@ -11,6 +11,11 @@ h1{margin:0 0 12px}
 .nav-right{display:flex;align-items:center;gap:12px}
 .greeting{color:#4a5568}
 .profile .avatar{display:inline-flex;width:32px;height:32px;border-radius:50%;background:#edf2f7;align-items:center;justify-content:center}
+.btn{display:inline-block;margin-top:12px;padding:10px 16px;border-radius:10px;background:#805ad5;color:#fff;text-decoration:none;border:none;cursor:pointer}
+
+/* Common component sizes */
+.mapbox{height:360px;border:1px solid #e2e8f0;border-radius:12px}
+.embed-frame{width:100%;height:60vh;border:0;border-radius:12px;overflow:hidden}
 
 /* Hamburger + mobile menu */
 .hamburger{width:32px;height:28px;display:none;flex-direction:column;justify-content:space-between;cursor:pointer}
@@ -24,4 +29,32 @@ h1{margin:0 0 12px}
 @media (max-width: 640px){
   .hamburger{display:flex}
   .nav-center{display:none !important}
+  /* Reorder to place hamburger at the far right */
+  .navbar{display:flex}
+  .nav-left{order:1}
+  .nav-right{order:2}
+  .hamburger{order:3;margin-left:auto}
+  body{padding:8px}
+  .wrap{max-width:100%}
+  .navbar{padding:8px 10px;margin-bottom:10px}
+  .nav-left{gap:8px}
+  .nav-right{gap:8px}
+  .brand{font-size:16px}
+  .greeting{font-size:12px}
+  .search{display:none}
+  .card{padding:12px;border-radius:10px}
+  h1{font-size:20px;margin-bottom:8px}
+  h2,h3{font-size:16px}
+  .btn{padding:6px 10px;font-size:12px;border-radius:8px;margin-top:8px}
+  /* Optionally hide right-side buttons like logout/profile on mobile */
+  .nav-right .btn{display:none}
+  .profile{display:none}
+  /* Stack common inline grid blocks */
+  .wrap .card > div[style*="grid-template-columns:repeat(3,1fr)"]{grid-template-columns:1fr !important;gap:8px}
+  .wrap .card > div[style*="grid-template-columns:repeat(2,1fr)"]{grid-template-columns:1fr !important;gap:8px}
+  /* Smaller components */
+  .mapbox{height:200px}
+  .embed-frame{height:70vh;border-radius:10px}
+  table{font-size:12px}
+  th,td{padding:6px 8px}
 }

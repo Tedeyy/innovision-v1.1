@@ -8,6 +8,7 @@ session_start();
 
 // Supabase auth helper (stores JWTs in $_SESSION for server-to-Supabase requests)
 require_once __DIR__ . '/lib/supabase_client.php';
+require_once __DIR__ . '/../common/notify.php';
 
 // Cache environment variables
 $envCache = [];
@@ -269,8 +270,9 @@ if ($loginAttempts >= 3) {
     
     if ($timeSinceLastAttempt < $cooldownPeriod) {
         $remainingTime = $cooldownPeriod - $timeSinceLastAttempt;
-        // Log suspicious attempt
-        insert_suspicious_log($baseUrl, $apiKey, $username, $ip, 'Too many failed login attempts');
+        // Log suspicious attempt and notify superadmin
+        insert_suspicious_log($SUPABASE_URL, $SUPABASE_KEY, $username, $ip, 'Too many failed login attempts');
+        notify_role('superadmin','Suspicious Login Attempt', 'User '.$username.' from IP '.$ip.' exceeded login attempts','', 'alert');
         redirect_with_error_and_cooldown('Too many failed attempts. Please try again later.', $remainingTime);
     } else {
         // Reset attempts if cooldown period has passed
@@ -317,6 +319,7 @@ if (!$found || !isset($found['password'])) {
     if ($entry['fails'] >= LOGIN_ATTEMPT_LIMIT) {
         $entry['lock_until'] = $now + LOGIN_LOCKOUT_TIME;
         insert_suspicious_log($SUPABASE_URL, $SUPABASE_KEY, $username, $ip);
+        notify_role('superadmin','Suspicious Login Attempt', 'User '+$username+' from IP '+$ip+' exceeded login attempts','', 'alert');
         $_SESSION['login_fail'][$key] = $entry;
         
         $remaining = LOGIN_LOCKOUT_TIME;
