@@ -6,6 +6,64 @@ if (($_SESSION['role'] ?? '') !== 'buyer'){
   header('Location: ../dashboard.php');
   exit;
 }
+
+// Inline: monthly violation count for a user from reportuser.verified (current month)
+if (isset($_GET['action']) && $_GET['action']==='violation_count'){
+  header('Content-Type: application/json');
+  $role = $_GET['role'] ?? '';
+  $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+  if (!in_array($role, ['seller','buyer'], true) || $id<=0){ echo json_encode(['ok'=>false,'error'=>'bad_params']); exit; }
+  $start = date('Y-m-01 00:00:00');
+  $end = date('Y-m-01 00:00:00', strtotime('+1 month'));
+  $filter = [ 'select'=>'report_id', 'and'=>'(verified.gte.'.$start.',verified.lt.'.$end.')' ];
+  if ($role==='seller'){ $filter['seller_id'] = 'eq.'.$id; }
+  else { $filter['buyer_id'] = 'eq.'.$id; }
+  [$rows,$st,$er] = sb_rest('GET','reportuser', $filter);
+  if (!($st>=200 && $st<300) || !is_array($rows)) $rows = [];
+  echo json_encode(['ok'=>true,'count'=> count($rows)]);
+  exit;
+}
+
+// Handle reporting seller from buyer on completed transaction
+if (isset($_POST['action']) && $_POST['action']==='report_user'){
+  header('Content-Type: application/json');
+  $sellerId = (int)($_POST['seller_id'] ?? 0);
+  $buyerIdIn = (int)($_POST['buyer_id'] ?? 0);
+  $title = trim((string)($_POST['title'] ?? ''));
+  $description = trim((string)($_POST['description'] ?? ''));
+  if ($buyerIdIn !== $buyerId){ echo json_encode(['ok'=>false,'error'=>'unauthorized']); exit; }
+  if ($sellerId<=0 || $buyerIdIn<=0 || $title==='' || $description===''){ echo json_encode(['ok'=>false,'error'=>'invalid_params']); exit; }
+  // Insert into reviewreportuser
+  $payload = [[
+    'seller_id'=>$sellerId,
+    'buyer_id'=>$buyerIdIn,
+    'title'=>$title,
+    'description'=>$description,
+    'Status'=>'Pending'
+  ]];
+  [$res,$st,$err] = sb_rest('POST','reviewreportuser',[], $payload, ['Prefer: return=representation']);
+  if (!($st>=200 && $st<300)){
+    $detail = is_array($res) && isset($res['message']) ? $res['message'] : (is_string($res)?$res:'');
+    echo json_encode(['ok'=>false,'error'=>'insert_failed','code'=>$st,'detail'=>$detail]); exit;
+  }
+  // Try to get any admin_id for userreport_logs
+  [$arows,$ast,$aer] = sb_rest('GET','admin',[ 'select'=>'user_id', 'limit'=>1, 'order'=>'user_id.asc' ]);
+  $admin_id = ($ast>=200 && $ast<300 && is_array($arows) && isset($arows[0]['user_id'])) ? (int)$arows[0]['user_id'] : null;
+  if ($admin_id){
+    $log = [[
+      'report_id'=> $res[0]['report_id'] ?? null,
+      'seller_id'=>$sellerId,
+      'buyer_id'=>$buyerIdIn,
+      'title'=>$title,
+      'description'=>$description,
+      'admin_id'=>$admin_id,
+      'Status'=>'Pending'
+    ]];
+    sb_rest('POST','userreport_logs',[], $log, ['Prefer: return=minimal']);
+  }
+  echo json_encode(['ok'=>true]);
+  exit;
+}
 $buyerId = (int)($_SESSION['user_id'] ?? 0);
 function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
@@ -144,6 +202,31 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
       <div>
         <a class="btn" href="../dashboard.php">Back to Dashboard</a>
       </div>
+
+  <!-- Report Seller Modal -->
+  <div id="reportModal" class="modal">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <h2 style="margin:0;">Report Seller</h2>
+        <button class="close-btn" data-close="reportModal">Close</button>
+      </div>
+      <div style="margin-top:8px;display:grid;gap:10px;">
+        <input type="hidden" id="repSellerId" />
+        <div>
+          <label style="display:block;font-weight:600;margin-bottom:4px;">Title</label>
+          <input type="text" id="repTitle" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
+        </div>
+        <div>
+          <label style="display:block;font-weight:600;margin-bottom:4px;">Description</label>
+          <textarea id="repDesc" style="width:100%;min-height:120px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn" id="btnSubmitReport">Submit Report</button>
+          <span id="repMsg" class="subtle"></span>
+        </div>
+      </div>
+    </div>
+  </div>
     </div>
 
     <div class="card">
@@ -258,12 +341,14 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
             '<div style="display:flex;gap:10px;align-items:flex-start;">'+ avatarHTML(seller) +
               '<div><div><strong>'+fullname(seller)+'</strong></div><div>Email: '+(seller.email||'')+'</div><div>Contact: '+(seller.contact||'')+'</div></div>'+
             '</div>'+
+            '<div id="sellerViolations" class="subtle" style="margin:6px 0 0 50px;">&nbsp;</div>'+
             '<h3 style="margin-top:10px;">Buyer</h3>'+
             '<div style="display:flex;gap:10px;align-items:flex-start;">'+ avatarHTML(buyer) +
               '<div><div><strong>'+fullname(buyer)+'</strong></div><div>Email: '+(buyer.email||'')+'</div><div>Contact: '+(buyer.contact||'')+'</div></div>'+
             '</div>'+
+            '<div id="buyerViolations" class="subtle" style="margin:6px 0 0 50px;">&nbsp;</div>'+
             // actions if completed
-            ((String(data.status||'').toLowerCase()==='completed') ? '<div style="margin-top:10px;"><button class="btn" id="btnRateSeller">Rate Seller</button></div>' : '');
+            ((String(data.status||'').toLowerCase()==='completed') ? '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn" id="btnRateSeller">Rate Seller</button><button class="btn" id="btnReportSeller" style="background:#ef4444;color:#fff;">Report Seller</button></div>' : '');
           var wrap = document.getElementById('imgWrap'); if (wrap) wrap.appendChild(img);
           setTimeout(function(){
             var mEl = document.getElementById('txMap'); if (!mEl || !window.L) return;
@@ -275,6 +360,21 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
             }
           }, 0);
           openModal('txModal');
+          // Load violation counters
+          try {
+            var sv = document.getElementById('sellerViolations'); if (sv){ sv.textContent = 'Checking violations...'; sv.style.color = '#6b7280'; }
+            var bv = document.getElementById('buyerViolations'); if (bv){ bv.textContent = 'Checking violations...'; bv.style.color = '#6b7280'; }
+            if (data.seller_id){
+              fetch('transactions.php?action=violation_count&role=seller&id='+encodeURIComponent(data.seller_id), { credentials:'same-origin' })
+                .then(function(r){ return r.json(); })
+                .then(function(res){ if (sv){ if (res && res.ok && res.count>0){ sv.textContent = 'Violations this month: '+res.count; sv.style.color = '#dc2626'; } else { sv.textContent = 'No violations 🙂'; sv.style.color = '#374151'; } } });
+            }
+            if (data.buyer_id){
+              fetch('transactions.php?action=violation_count&role=buyer&id='+encodeURIComponent(data.buyer_id), { credentials:'same-origin' })
+                .then(function(r){ return r.json(); })
+                .then(function(res){ if (bv){ if (res && res.ok && res.count>0){ bv.textContent = 'Violations this month: '+res.count; bv.style.color = '#dc2626'; } else { bv.textContent = 'No violations 🙂'; bv.style.color = '#374151'; } } });
+            }
+          } catch(_){}
           // Rating button handler
           var rb = document.getElementById('btnRateSeller');
           if (rb){
@@ -285,10 +385,18 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
               openModal('rateModal');
             });
           }
+          // Report button handler
+          var rpb = document.getElementById('btnReportSeller');
+          if (rpb){
+            rpb.addEventListener('click', function(){
+              document.getElementById('repSellerId').value = String(data.seller_id||'');
+              openModal('reportModal');
+            });
+          }
         }
       });
 
-      ['txModal','rateModal'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.addEventListener('click', function(ev){ if(ev.target===el) closeModal(id); }); }});
+      ['txModal','rateModal','reportModal'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.addEventListener('click', function(ev){ if(ev.target===el) closeModal(id); }); }});
 
       // Star rating interactions
       var currentRating = 5;
@@ -336,6 +444,37 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
               }
             })
             .catch(function(){ btnSubmitRating.disabled = false; btnSubmitRating.textContent = 'Submit Rating'; });
+        });
+      }
+
+      // Submit report
+      var btnSubmitReport = document.getElementById('btnSubmitReport');
+      if (btnSubmitReport){
+        btnSubmitReport.addEventListener('click', function(){
+          var sellerId = parseInt((document.getElementById('repSellerId')||{}).value||'0',10) || 0;
+          var title = (document.getElementById('repTitle')||{}).value||'';
+          var desc = (document.getElementById('repDesc')||{}).value||'';
+          var msg = document.getElementById('repMsg'); if (msg) { msg.textContent=''; }
+          if (title.trim()==='' || desc.trim()===''){ if (msg){ msg.textContent='Please fill in title and description.'; msg.style.color='#e53e3e'; } return; }
+          var fd = new FormData();
+          fd.append('action','report_user');
+          fd.append('buyer_id','<?php echo (int)$buyerId; ?>');
+          fd.append('seller_id', String(sellerId));
+          fd.append('title', title);
+          fd.append('description', desc);
+          btnSubmitReport.disabled = true; btnSubmitReport.textContent = 'Submitting...'; if (msg){ msg.textContent=''; }
+          fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(res){
+              btnSubmitReport.disabled = false; btnSubmitReport.textContent = 'Submit Report';
+              if (res && res.ok){
+                if (msg){ msg.textContent='Thank you for helping make our community better.'; msg.style.color='#38a169'; }
+                setTimeout(function(){ closeModal('reportModal'); closeModal('txModal'); }, 800);
+              } else {
+                if (msg){ msg.textContent='Failed: '+(res && res.error? res.error : 'Unknown error'); msg.style.color='#e53e3e'; }
+              }
+            })
+            .catch(function(err){ btnSubmitReport.disabled=false; btnSubmitReport.textContent='Submit Report'; if (msg){ msg.textContent='Network error: '+err.message; msg.style.color='#e53e3e'; } });
         });
       }
     })();

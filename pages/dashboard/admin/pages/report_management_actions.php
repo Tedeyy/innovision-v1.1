@@ -60,18 +60,22 @@ if ($action === 'approve_report') {
             'report_id' => 'eq.' . $report_id
         ]);
         
-        // Update log
-        sb_rest('PATCH', 'userreport_logs', [
+        // Insert log entry into userreport_logs
+        $logData = [[
+            'report_id' => $report_id,
+            'seller_id' => $report['seller_id'],
+            'buyer_id' => $report['buyer_id'],
+            'title' => $report['title'],
+            'description' => $report['description'],
             'admin_id' => $adminId,
             'Status' => 'Verified',
+            'created' => $report['created'],
             'verified' => date('Y-m-d H:i:s')
-        ], [
-            'report_id' => 'eq.' . $report_id
-        ]);
+        ]];
+        sb_rest('POST','userreport_logs',[], $logData, ['Prefer: return=minimal']);
         
-        // Notify buyer and seller about verified report
-        if (!empty($seller_id)) { notify_send((int)$seller_id,'seller','Report Verified','Your report has been verified by admin.', (int)$report_id,'report'); }
-        if (!empty($buyer_id))  { notify_send((int)$buyer_id,'buyer','Report Verified','A report related to you has been verified.', (int)$report_id,'report'); }
+        // Notify reporter (assumed buyer filed the report)
+        if (!empty($buyer_id))  { notify_send((int)$buyer_id,'buyer','Report Approved','Your report has been approved.', (int)$report_id,'report'); }
         echo json_encode(['success' => true, 'message' => 'Report approved successfully']);
     } else {
         echo json_encode(['success' => false, 'error' => $error ?? 'Failed to approve report']);
@@ -91,15 +95,20 @@ if ($action === 'approve_report') {
     ]);
     
     if ($status >= 200 && $status < 300) {
-        // Update log to show disregarded
-        sb_rest('PATCH', 'userreport_logs', [
+        // Insert log row for disregarded action
+        $logData = [[
+            'report_id' => $report_id,
+            'seller_id' => $input['seller_id'] ?? null,
+            'buyer_id' => $input['buyer_id'] ?? null,
+            'title' => $input['title'] ?? '',
+            'description' => $input['description'] ?? '',
             'admin_id' => $adminId,
             'Status' => 'Disregarded',
             'verified' => date('Y-m-d H:i:s')
-        ], [
-            'report_id' => 'eq.' . $report_id
-        ]);
+        ]];
+        sb_rest('POST','userreport_logs',[], $logData, ['Prefer: return=minimal']);
         // Notify reporter that the report was disregarded (if buyer_id exists)
+        $buyer_id = $input['buyer_id'] ?? '';
         if (!empty($buyer_id)) { notify_send((int)$buyer_id,'buyer','Report Disregarded','Your report was disregarded by admin.', (int)$report_id,'report'); }
         echo json_encode(['success' => true, 'message' => 'Report disregarded successfully']);
     } else {
@@ -150,6 +159,17 @@ if ($action === 'approve_report') {
     [$result, $status, $error] = sb_rest('POST', 'penalty_log', [], [$penaltyData]);
     
     if ($status >= 200 && $status < 300) {
+        // Also insert into active penalty table
+        $activePenalty = [[
+            'report_id' => $report_id,
+            'seller_id' => $seller_id,
+            'buyer_id' => $buyer_id,
+            'title' => $report['title'],
+            'description' => $report['description'],
+            'admin_id' => $adminId,
+            'penaltytime' => $penaltyEndTime,
+        ]];
+        sb_rest('POST','penalty',[], $activePenalty, ['Prefer: return=minimal']);
         // Notify buyer and seller of penalty
         if (!empty($seller_id)) { notify_send((int)$seller_id,'seller','Penalty Applied','A penalty has been applied to your account.', (int)$report_id,'penalty'); }
         if (!empty($buyer_id))  { notify_send((int)$buyer_id,'buyer','Penalty Assigned to Seller','Admin has applied a penalty to the seller.', (int)$report_id,'penalty'); }
@@ -158,6 +178,19 @@ if ($action === 'approve_report') {
         echo json_encode(['success' => false, 'error' => $error ?? 'Failed to apply penalty']);
     }
     
+} elseif ($action === 'lift_penalty') {
+    $report_id = $input['report_id'] ?? '';
+    $seller_id = $input['seller_id'] ?? '';
+    $buyer_id  = $input['buyer_id'] ?? '';
+    if (empty($report_id)) { echo json_encode(['success'=>false,'error'=>'Missing report ID']); exit; }
+    [$res,$st,$er] = sb_rest('DELETE','penalty', [ 'report_id'=>'eq.'.$report_id ]);
+    if ($st>=200 && $st<300){
+        if (!empty($seller_id)) { notify_send((int)$seller_id,'seller','Penalty Lifted','Your active penalty has been lifted.', (int)$report_id,'penalty'); }
+        if (!empty($buyer_id))  { notify_send((int)$buyer_id,'buyer','Penalty Lifted for Seller','Active penalty for the seller has been lifted.', (int)$report_id,'penalty'); }
+        echo json_encode(['success'=>true,'message'=>'Penalty lifted']);
+    } else {
+        echo json_encode(['success'=>false,'error'=>$er ?: 'Failed to lift penalty']);
+    }
 } else {
     echo json_encode(['success' => false, 'error' => 'Unknown action']);
 }

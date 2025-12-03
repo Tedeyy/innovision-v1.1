@@ -74,6 +74,68 @@ Flows
 </pre>
     </div>
 
+  <div class="card" style="margin-top:16px;">
+    <h2>Use Case Diagram</h2>
+    <div class="diagram">
+<pre>
+Actors
+ ├─ Buyer
+ ├─ Seller
+ ├─ BAT (Barangay Agri Tech)
+ ├─ Admin
+ └─ Superadmin
+
+System: Innovision Platform
+
+Buyer Use Cases
+  • Register / Login
+  • Browse Listings, View Post
+  • Express Interest in Listing
+  • View Transactions (Started → Ongoing → Completed)
+  • Rate Seller, Report Seller
+  • Receive Notifications (in-app / SMS if verified)
+
+Seller Use Cases
+  • Register / Login
+  • Create / Manage Listings
+  • Start Transaction with Interested Buyer
+  • View Transactions (Follow BAT scheduling)
+  • Rate Buyer, Report Buyer
+  • Receive Notifications (in-app / SMS if verified)
+
+BAT Use Cases
+  • Review Listings (Approve / Deny)
+  • Monitor Transactions (Started / Ongoing / Completed)
+  • Set Meet-up Date/Location
+  • Complete Transaction (Successful / Failed)
+  • Receive Notifications
+
+Admin Use Cases
+  • Review & Verify Users (Buyer/Seller/BAT)
+  • Manage Reports (Approve → Violators, Disregard)
+  • Apply / Lift Penalties
+  • Request Price Changes
+  • Receive Notifications
+
+Superadmin Use Cases
+  • Oversee Security & Blacklist
+  • Approve / Deny Price Requests
+  • View Analytics & Logs
+  • Receive Notifications
+
+Data/Integration Notes
+  • All actions persist via Supabase (PostgREST)
+  • Notifications table drives in-app; IPROGSMS sends SMS if contact verified
+  • Logs recorded to *_logs tables (e.g., userreport_logs, transactions_logs)
+
+Legend (textual mapping)
+  Buyer ←→ Seller: Interest → Start Tx → BAT schedules → Completion
+  Admin ↔ Reports: reviewreportuser → reportuser / penalty / penalty_log
+  Superadmin ↔ Pricing: pendingmarketpricing → approved/denied
+</pre>
+    </div>
+  </div>
+
     <div class="grid">
       <div class="card">
         <h2>Clients</h2>

@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
 require_once __DIR__ . '/../../../authentication/lib/use_case_logger.php';
+require_once __DIR__ . '/../../../common/notify.php';
 
 function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 // Inline endpoint to sign and fetch supporting document URL
@@ -366,7 +367,11 @@ if (isset($_GET['decide'])){
   if (!($dh>=200 && $dh<300)){
     echo json_encode(['ok'=>false,'error'=>'cleanup failed (http '.$dh.')']); exit;
   }
-
+  // Notify the user about the decision
+  $title = $action === 'approve' ? 'Account Approved' : 'Account Denied';
+  $msg = $action === 'approve' ? 'Your account has been approved by admin.' : 'Your account verification was denied by admin.';
+  $recipient_role = $role; // 'buyer' | 'seller' | 'bat'
+  notify_send((int)$id, $recipient_role, $title, $msg, (int)$id, 'verification');
   echo json_encode(['ok'=>true,'moved'=>$moved]);
   exit;
 }

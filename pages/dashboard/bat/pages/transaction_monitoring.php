@@ -139,6 +139,85 @@ if (isset($_POST['action']) && $_POST['action']==='set_schedule'){
   echo json_encode(['ok'=>true,'warning'=> (count($warnings)? implode('; ', $warnings) : null)]); exit;
 }
 
+// Inline action: complete an ongoing transaction (BAT)
+if (isset($_POST['action']) && $_POST['action']==='complete_transaction'){
+  header('Content-Type: application/json');
+  $txId = isset($_POST['transaction_id']) ? (int)$_POST['transaction_id'] : 0;
+  $listingId = isset($_POST['listing_id']) ? (int)$_POST['listing_id'] : 0;
+  $sellerId = isset($_POST['seller_id']) ? (int)$_POST['seller_id'] : 0;
+  $buyerId = isset($_POST['buyer_id']) ? (int)$_POST['buyer_id'] : 0;
+  $result = isset($_POST['result']) ? (string)$_POST['result'] : 'successful';
+  $price = isset($_POST['price']) ? (float)$_POST['price'] : 0;
+  $paymentMethod = isset($_POST['payment_method']) ? (string)$_POST['payment_method'] : '';
+  if (!$txId || !$listingId || !$sellerId || !$buyerId){ echo json_encode(['ok'=>false,'error'=>'missing_params']); exit; }
+  if ($result==='successful' && ($price<=0 || $paymentMethod==='')){ echo json_encode(['ok'=>false,'error'=>'missing_payment']); exit; }
+  // Fetch the ongoing transaction for details
+  [$txRows,$txStatus,$txError] = sb_rest('GET','ongoingtransactions',[
+    'select'=>'*', 'transaction_id'=>'eq.'.$txId, 'listing_id'=>'eq.'.$listingId, 'seller_id'=>'eq.'.$sellerId, 'buyer_id'=>'eq.'.$buyerId, 'limit'=>1
+  ]);
+  if (!($txStatus>=200 && $txStatus<300) || !is_array($txRows) || empty($txRows)){
+    echo json_encode(['ok'=>false,'error'=>'transaction_not_found']); exit;
+  }
+  $tx = $txRows[0];
+  $now = date('Y-m-d H:i:s');
+  // Insert into completedtransactions
+  [$compRes,$compSt,$compErr] = sb_rest('POST','completedtransactions',[],[[
+    'transaction_id'=>$txId,
+    'listing_id'=>$listingId,
+    'seller_id'=>$sellerId,
+    'buyer_id'=>$buyerId,
+    'status'=>'Completed',
+    'started_at'=>$tx['started_at'] ?? null,
+    'bat_id'=>$batId,
+    'transaction_date'=>$tx['transaction_date'] ?? $now,
+    'transaction_location'=>$tx['transaction_location'] ?? null,
+    'completed_transaction'=>$now
+  ]]);
+  if (!($compSt>=200 && $compSt<300)){
+    echo json_encode(['ok'=>false,'error'=>'complete_insert_failed','code'=>$compSt]); exit;
+  }
+  // Log into transactions_logs
+  sb_rest('POST','transactions_logs',[],[[
+    'transaction_id'=>$txId,
+    'listing_id'=>$listingId,
+    'seller_id'=>$sellerId,
+    'buyer_id'=>$buyerId,
+    'status'=>'Completed',
+    'started_at'=>$tx['started_at'] ?? null,
+    'bat_id'=>$batId,
+    'transaction_date'=>$now,
+    'transaction_location'=>$tx['transaction_location'] ?? null,
+    'completed_transaction'=>$now
+  ]], ['Prefer: return=minimal']);
+  // Result-specific insert
+  if (strtolower($result)==='successful'){
+    sb_rest('POST','successfultransactions',[],[[
+      'transaction_id'=>$txId,
+      'listing_id'=>$listingId,
+      'seller_id'=>$sellerId,
+      'buyer_id'=>$buyerId,
+      'price'=>$price,
+      'payment_method'=>$paymentMethod,
+      'status'=>'Successful',
+      'transaction_date'=>$now
+    ]], ['Prefer: return=minimal']);
+  } else {
+    sb_rest('POST','failedtransactions',[],[[
+      'transaction_id'=>$txId,
+      'listing_id'=>$listingId,
+      'seller_id'=>$sellerId,
+      'buyer_id'=>$buyerId,
+      'price'=>($price>0?$price:0),
+      'payment_method'=>($paymentMethod!==''?$paymentMethod:null),
+      'status'=>'Failed',
+      'transaction_date'=>$now
+    ]], ['Prefer: return=minimal']);
+  }
+  // Remove from ongoingtransactions
+  sb_rest('DELETE','ongoingtransactions',[ 'transaction_id'=>'eq.'.$txId ], null, ['Prefer: return=minimal']);
+  echo json_encode(['ok'=>true]); exit;
+}
+
 function fetch_table($table, $select, $order){
   [$rows,$st,$err] = sb_rest('GET', $table, [ 'select'=>$select, 'order'=>$order ]);
   return [
@@ -396,8 +475,9 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
                     '</div>'+
                     '<div style="margin-bottom:8px;color:#4a5568;font-size:12px;">💡 Click anywhere on the map to set the meet-up location</div>'+
                     '<div id="txMap" style="height:260px;border:1px solid #e2e8f0;border-radius:8px;cursor:crosshair;" title="Click anywhere on the map to set meet-up location"></div>'+
-                    '<div style="margin-top:12px;display:flex;gap:8px;">'+
+                    '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">'+
                       '<button class="btn" id="btnSaveTx">Save Meet-up Details</button>'+
+                      '<button class="btn" id="btnCompleteTx" style="background:#10b981;color:#fff;">Complete Transaction</button>'+
                       '<span id="saveStatus" style="color:#4a5568;font-size:12px;"></span>'+
                     '</div>'+
                   '</div>'
@@ -510,9 +590,96 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
                     });
                 });
               }
+              // Complete flow
+              var completeBtn = document.getElementById('btnCompleteTx');
+              if (!isCompleted && completeBtn) {
+                completeBtn.addEventListener('click', function(){
+                  // Open complete modal and seed hidden fields
+                  var fm = document.getElementById('batCompleteForm');
+                  if (fm){
+                    fm.querySelector('input[name="transaction_id"]').value = data.transaction_id || '';
+                    fm.querySelector('input[name="listing_id"]').value = data.listing_id || '';
+                    fm.querySelector('input[name="seller_id"]').value = data.seller_id || '';
+                    fm.querySelector('input[name="buyer_id"]').value = data.buyer_id || '';
+                  }
+                  openModal('batCompleteModal');
+                });
+              }
             });
         }
       });
+    })();
+  </script>
+  <!-- Complete Transaction Modal (BAT) -->
+  <div id="batCompleteModal" class="modal" style="display:none;align-items:center;justify-content:center;">
+    <div class="panel" style="max-width:560px;width:100%">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <h2 style="margin:0;">Complete Transaction</h2>
+        <button class="close-btn" data-close="batCompleteModal">Close</button>
+      </div>
+      <form id="batCompleteForm" style="margin-top:8px;display:grid;gap:10px;">
+        <input type="hidden" name="transaction_id" />
+        <input type="hidden" name="listing_id" />
+        <input type="hidden" name="seller_id" />
+        <input type="hidden" name="buyer_id" />
+        <div>
+          <label style="font-weight:600;">Result</label>
+          <div style="margin-top:6px;">
+            <label style="margin-right:12px;"><input type="radio" name="result" value="successful" checked /> Successful</label>
+            <label><input type="radio" name="result" value="failed" /> Failed</label>
+          </div>
+        </div>
+        <div>
+          <label style="font-weight:600;">Final Price (₱)</label>
+          <input type="number" name="price" step="0.01" min="0" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
+        </div>
+        <div>
+          <label style="font-weight:600;">Payment Method</label>
+          <input type="text" name="payment_method" placeholder="e.g. Cash" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" class="btn" id="batCompleteSubmit">Submit</button>
+          <span id="batCompleteMsg" class="subtle"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+  <script>
+    (function(){
+      var form = document.getElementById('batCompleteForm');
+      var submitBtn = document.getElementById('batCompleteSubmit');
+      var msg = document.getElementById('batCompleteMsg');
+      if (submitBtn && form){
+        submitBtn.addEventListener('click', function(){
+          msg.textContent = '';
+          var fd = new FormData(form);
+          var result = (fd.get('result')||'').toString();
+          var price = parseFloat(fd.get('price')||'0');
+          var pay = (fd.get('payment_method')||'').toString().trim();
+          if (result==='successful' && (isNaN(price) || price<=0 || pay==='')){
+            msg.textContent = 'Please provide price and payment method for successful transactions.';
+            msg.style.color = '#e53e3e';
+            return;
+          }
+          fd.append('action','complete_transaction');
+          submitBtn.disabled = true; submitBtn.textContent = 'Submitting...';
+          fetch('transaction_monitoring.php', { method:'POST', body: fd, credentials:'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(res){
+              submitBtn.disabled = false; submitBtn.textContent = 'Submit';
+              if (res && res.ok){
+                msg.textContent = 'Transaction completed.'; msg.style.color = '#38a169';
+                setTimeout(function(){
+                  document.querySelector('.modal#batCompleteModal').style.display='none';
+                  window.location.reload();
+                }, 600);
+              } else {
+                msg.textContent = 'Failed: ' + (res && res.error ? res.error : 'Unknown error'); msg.style.color = '#e53e3e';
+              }
+            })
+            .catch(function(err){ submitBtn.disabled=false; submitBtn.textContent='Submit'; msg.textContent = 'Network error: '+err.message; msg.style.color = '#e53e3e'; });
+        });
+      }
     })();
   </script>
 </body>

@@ -7,6 +7,24 @@ if (($_SESSION['role'] ?? '') !== 'admin'){
 }
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
 function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
+// Fetch data for tables
+[$revRows,$revSt,$revErr] = sb_rest('GET','reviewreportuser',[
+  'select'=>'report_id,seller_id,buyer_id,title,description,Status,created,seller:seller(user_fname,user_lname),buyer:buyer(user_fname,user_lname)',
+  'order'=>'created.desc'
+]);
+if (!($revSt>=200 && $revSt<300) || !is_array($revRows)) $revRows = [];
+
+[$verRows,$verSt,$verErr] = sb_rest('GET','reportuser',[
+  'select'=>'report_id,seller_id,buyer_id,title,description,Status,created,verified,seller:seller(user_fname,user_lname),buyer:buyer(user_fname,user_lname)',
+  'order'=>'verified.desc'
+]);
+if (!($verSt>=200 && $verSt<300) || !is_array($verRows)) $verRows = [];
+
+[$penRows,$penSt,$penErr] = sb_rest('GET','penalty',[
+  'select'=>'report_id,seller_id,buyer_id,title,description,admin_id,penaltytime,created,seller:seller(user_fname,user_lname),buyer:buyer(user_fname,user_lname)',
+  'order'=>'created.desc'
+]);
+if (!($penSt>=200 && $penSt<300) || !is_array($penRows)) $penRows = [];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -95,33 +113,24 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
             </tr>
           </thead>
           <tbody>
-            <tr data-report-id="1" data-seller-id="1" data-buyer-id="2">
-              <td>#001</td>
-              <td>John's Farm</td>
-              <td>Maria Santos</td>
-              <td>Fraudulent Payment</td>
-              <td>2024-01-15</td>
-              <td><span class="status-badge status-pending">Pending</span></td>
+          <?php if (count($revRows)===0): ?>
+            <tr><td colspan="7" style="color:#4a5568;">No pending reports.</td></tr>
+          <?php else: foreach ($revRows as $r):
+            $sid = (int)($r['seller_id'] ?? 0);
+            $bid = (int)($r['buyer_id'] ?? 0);
+            $sellerName = trim((($r['seller']['user_fname'] ?? '')).' '.(($r['seller']['user_lname'] ?? '')));
+            $buyerName = trim((($r['buyer']['user_fname'] ?? '')).' '.(($r['buyer']['user_lname'] ?? '')));
+          ?>
+            <tr data-report-id="<?php echo safe($r['report_id']??''); ?>" data-seller-id="<?php echo safe($sid); ?>" data-buyer-id="<?php echo safe($bid); ?>" data-title="<?php echo safe($r['title']??''); ?>" data-description="<?php echo safe($r['description']??''); ?>" data-created="<?php echo safe($r['created']??''); ?>">
+              <td>#<?php echo safe($r['report_id']??''); ?></td>
+              <td><?php echo safe($sellerName ?: ('Seller #'.$sid)); ?></td>
+              <td><?php echo safe($buyerName ?: ('Buyer #'.$bid)); ?></td>
+              <td><?php echo safe($r['title'] ?? ''); ?></td>
+              <td><?php echo safe(substr((string)($r['created']??''),0,19)); ?></td>
+              <td><span class="status-badge status-pending"><?php echo safe($r['Status'] ?? 'Pending'); ?></span></td>
               <td><button class="btn btn-view btn-show" onclick="viewReportDetails(this)">Show</button></td>
             </tr>
-            <tr data-report-id="2" data-seller-id="3" data-buyer-id="4">
-              <td>#002</td>
-              <td>Green Meadows</td>
-              <td>Carlos Rodriguez</td>
-              <td>Misrepresented Product</td>
-              <td>2024-01-14</td>
-              <td><span class="status-badge status-pending">Pending</span></td>
-              <td><button class="btn btn-view btn-show" onclick="viewReportDetails(this)">Show</button></td>
-            </tr>
-            <tr data-report-id="3" data-seller-id="5" data-buyer-id="6">
-              <td>#003</td>
-              <td>Sunny Valley Ranch</td>
-              <td>Lisa Chen</td>
-              <td>Non-delivery of Goods</td>
-              <td>2024-01-13</td>
-              <td><span class="status-badge status-pending">Pending</span></td>
-              <td><button class="btn btn-view btn-show" onclick="viewReportDetails(this)">Show</button></td>
-            </tr>
+          <?php endforeach; endif; ?>
           </tbody>
         </table>
       </div>
@@ -144,24 +153,24 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
             </tr>
           </thead>
           <tbody>
-            <tr data-report-id="4" data-seller-id="7" data-buyer-id="8">
-              <td>#004</td>
-              <td>Happy Farms</td>
-              <td>David Kim</td>
-              <td>Scam Transaction</td>
-              <td>2024-01-10</td>
-              <td><span class="status-badge status-verified">Verified</span></td>
+          <?php if (count($verRows)===0): ?>
+            <tr><td colspan="7" style="color:#4a5568;">No verified reports.</td></tr>
+          <?php else: foreach ($verRows as $r):
+            $sid = (int)($r['seller_id'] ?? 0);
+            $bid = (int)($r['buyer_id'] ?? 0);
+            $sellerName = trim((($r['seller']['user_fname'] ?? '')).' '.(($r['seller']['user_lname'] ?? '')));
+            $buyerName = trim((($r['buyer']['user_fname'] ?? '')).' '.(($r['buyer']['user_lname'] ?? '')));
+          ?>
+            <tr data-report-id="<?php echo safe($r['report_id']??''); ?>" data-seller-id="<?php echo safe($sid); ?>" data-buyer-id="<?php echo safe($bid); ?>" data-title="<?php echo safe($r['title']??''); ?>" data-description="<?php echo safe($r['description']??''); ?>" data-verified="<?php echo safe($r['verified']??''); ?>">
+              <td>#<?php echo safe($r['report_id']??''); ?></td>
+              <td><?php echo safe($sellerName ?: ('Seller #'.$sid)); ?></td>
+              <td><?php echo safe($buyerName ?: ('Buyer #'.$bid)); ?></td>
+              <td><?php echo safe($r['title'] ?? ''); ?></td>
+              <td><?php echo safe(substr((string)($r['verified']??''),0,19)); ?></td>
+              <td><span class="status-badge status-verified"><?php echo safe($r['Status'] ?? 'Verified'); ?></span></td>
               <td><button class="btn btn-view btn-show" onclick="viewReportDetails(this)">Show</button></td>
             </tr>
-            <tr data-report-id="5" data-seller-id="9" data-buyer-id="10">
-              <td>#005</td>
-              <td>Organic Valley</td>
-              <td>Sarah Johnson</td>
-              <td>Fake Product Listing</td>
-              <td>2024-01-08</td>
-              <td><span class="status-badge status-verified">Verified</span></td>
-              <td><button class="btn btn-view btn-show" onclick="viewReportDetails(this)">Show</button></td>
-            </tr>
+          <?php endforeach; endif; ?>
           </tbody>
         </table>
       </div>
@@ -184,24 +193,24 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>Bad User</td>
-              <td>1 Week Ban</td>
-              <td>2024-01-05</td>
-              <td>2024-01-12</td>
-              <td>Multiple fraudulent transactions</td>
+          <?php if (count($penRows)===0): ?>
+            <tr><td colspan="7" style="color:#4a5568;">No active penalties.</td></tr>
+          <?php else: foreach ($penRows as $r):
+            $sid = (int)($r['seller_id'] ?? 0);
+            $bid = (int)($r['buyer_id'] ?? 0);
+            $sellerName = trim((($r['seller']['user_fname'] ?? '')).' '.(($r['seller']['user_lname'] ?? '')));
+            $buyerName = trim((($r['buyer']['user_fname'] ?? '')).' '.(($r['buyer']['user_lname'] ?? '')));
+          ?>
+            <tr data-report-id="<?php echo safe($r['report_id']??''); ?>" data-seller-id="<?php echo safe($sid); ?>" data-buyer-id="<?php echo safe($bid); ?>" data-title="<?php echo safe($r['title']??''); ?>" data-description="<?php echo safe($r['description']??''); ?>" data-penaltytime="<?php echo safe($r['penaltytime']??''); ?>">
+              <td><?php echo safe(($sellerName?:('Seller #'.$sid)).' / '.($buyerName?:('Buyer #'.$bid))); ?></td>
+              <td>Active</td>
+              <td><?php echo safe(substr((string)($r['created']??''),0,10)); ?></td>
+              <td><?php echo safe(substr((string)($r['penaltytime']??''),0,10)); ?></td>
+              <td><?php echo safe($r['title'] ?? ''); ?></td>
               <td><span class="status-badge status-verified">Active</span></td>
               <td><button class="btn btn-view btn-show" onclick="viewReportDetails(this)">Show</button></td>
             </tr>
-            <tr>
-              <td>Scammer Account</td>
-              <td>3 Days Ban</td>
-              <td>2024-01-15</td>
-              <td>2024-01-18</td>
-              <td>False advertising</td>
-              <td><span class="status-badge status-verified">Active</span></td>
-              <td><button class="btn btn-view btn-show" onclick="viewReportDetails(this)">Show</button></td>
-            </tr>
+          <?php endforeach; endif; ?>
           </tbody>
         </table>
       </div>
@@ -282,6 +291,8 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
       currentContext = (table && table.id==='verifiedReports') ? 'verified' : ((table && table.id==='penaltyUsers') ? 'penalty' : 'pending');
       
       const cells = row.cells;
+      const desc = row.getAttribute('data-description') || 'No description';
+      const createdAt = row.getAttribute('data-created') || row.getAttribute('data-verified') || '';
       const details = `
         <div class="detail-row">
           <div class="detail-label">Report ID:</div>
@@ -301,11 +312,11 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
         </div>
         <div class="detail-row">
           <div class="detail-label">Date:</div>
-          <div class="detail-value">${cells[4].textContent}</div>
+          <div class="detail-value">${createdAt? createdAt.substring(0,19): cells[4].textContent}</div>
         </div>
         <div class="detail-row">
           <div class="detail-label">Description:</div>
-          <div class="detail-value">This is a sample description. In a real implementation, this would show the full report details from the database.</div>
+          <div class="detail-value">${desc}</div>
         </div>
       `;
       
@@ -373,6 +384,10 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
     function disregardReport(button) {
       const row = button.closest('tr');
       const reportId = row.getAttribute('data-report-id');
+      const sellerId = row.getAttribute('data-seller-id') || '';
+      const buyerId = row.getAttribute('data-buyer-id') || '';
+      const title = row.getAttribute('data-title') || '';
+      const description = row.getAttribute('data-description') || '';
       
       if (confirm('Are you sure you want to disregard this report?')) {
         fetch('report_management_actions.php', {
@@ -380,7 +395,11 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'disregard_report',
-            report_id: reportId
+            report_id: reportId,
+            seller_id: sellerId,
+            buyer_id: buyerId,
+            title: title,
+            description: description
           })
         })
         .then(response => response.json())
@@ -592,12 +611,12 @@ function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
     function liftPenaltyFromModal(){
       if (!currentReportRow) return;
       if (!confirm('Lift this active penalty?')) return;
-      // Optimistically remove from table; optionally call backend to record lifting
-      const userName = currentReportRow.cells[0].textContent;
-      // Call backend (no strict schema here; send minimal payload)
+      const reportId = currentReportRow.getAttribute('data-report-id') || '';
+      const sellerId = currentReportRow.getAttribute('data-seller-id') || '';
+      const buyerId  = currentReportRow.getAttribute('data-buyer-id') || '';
       fetch('report_management_actions.php', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ action:'lift_penalty', user: userName })
+        body: JSON.stringify({ action:'lift_penalty', report_id: reportId, seller_id: sellerId, buyer_id: buyerId })
       }).then(()=>{}).catch(()=>{});
       currentReportRow.remove();
       closeModal('reportModal');
