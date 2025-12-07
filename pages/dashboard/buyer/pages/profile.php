@@ -177,17 +177,22 @@ if ($userId) {
   (function(){
     var btn = document.getElementById('btn-reset');
     if (!btn) return;
-    btn.addEventListener('click', async function(){
-      try{
-        var emailInput = document.querySelector('input[type="email"]');
-        var email = emailInput ? emailInput.value : '';
-        if (!email){ alert('No email found for this account.'); return; }
-        const res = await fetch('../../../authentication/reset_password_request.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email }) });
-        const data = await res.json();
-        if (!data.ok) { alert(data.error || 'Failed to send reset email'); return; }
-        alert('Password reset email sent. Please check your inbox.');
-      }catch(e){ alert('Network error'); }
+    btn.addEventListener('click', function(){
+      var base = '../../../authentication/reset_password.php?mode=direct&redirect=' + encodeURIComponent(window.location.href.split('#')[0]);
+      window.location.href = base;
     });
   })();
  </script>
 </body></html>
+
+<script>
+  (function(){
+    var p = new URLSearchParams(window.location.search);
+    if (p.get('msg') === 'password_changed') {
+      alert('Password has been changed successfully.');
+      p.delete('msg');
+      var url = window.location.pathname + (p.toString()?('?'+p.toString()):'');
+      window.history.replaceState({}, '', url);
+    }
+  })();
+</script>

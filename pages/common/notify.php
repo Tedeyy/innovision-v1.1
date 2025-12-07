@@ -1,5 +1,4 @@
 <?php
-session_start();
 require_once __DIR__ . '/../authentication/lib/supabase_client.php';
 
 function _env_val($key){

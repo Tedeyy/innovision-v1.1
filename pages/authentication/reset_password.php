@@ -36,7 +36,7 @@ require_once __DIR__ . '/lib/supabase_client.php';
         <button class="ghost" id="btn-cancel" type="button">Cancel</button>
         <button id="btn-save" type="button">Update Password</button>
       </div>
-      <div id="ok" class="success" style="display:none">Password updated. You can close this window.</div>
+      <div id="ok" class="success" style="display:none">Password updated successfully.</div>
     </div>
   </div>
   <script>
@@ -50,6 +50,9 @@ require_once __DIR__ . '/lib/supabase_client.php';
         return (type === 'recovery' && token) ? token : null;
       }
       var token = getTokenFromHash();
+      var urlParams = new URLSearchParams(window.location.search);
+      var mode = (urlParams.get('mode') || '').toLowerCase();
+      var redirect = urlParams.get('redirect') || '';
       var msg = document.getElementById('msg');
       function showError(t){ if(!msg) return; msg.style.display='block'; msg.textContent=t; }
       document.getElementById('btn-cancel').addEventListener('click', function(){ window.close(); });
@@ -58,12 +61,22 @@ require_once __DIR__ . '/lib/supabase_client.php';
         var p2 = document.getElementById('pw2').value;
         if (!p1 || p1.length < 6) { return showError('Password must be at least 6 characters'); }
         if (p1 !== p2) { return showError('Passwords do not match'); }
-        if (!token){ return showError('Missing or invalid recovery token. Open the link from your email again.'); }
         try{
-          const res = await fetch('reset_password_submit.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token: token, new_password: p1 })});
-          const data = await res.json();
-          if (!data.ok) { return showError(data.error || 'Failed to update password'); }
-          document.getElementById('ok').style.display = 'block';
+          if (token) {
+            const res = await fetch('reset_password_submit.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token: token, new_password: p1 })});
+            const data = await res.json();
+            if (!data.ok) { return showError(data.error || 'Failed to update password'); }
+            document.getElementById('ok').style.display = 'block';
+            if (redirect) { setTimeout(function(){ window.location.href = redirect + (redirect.includes('?') ? '&' : '?') + 'msg=password_changed'; }, 800); }
+          } else if (mode === 'direct') {
+            const res2 = await fetch('reset_password_change.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ new_password: p1 })});
+            const data2 = await res2.json();
+            if (!data2.ok) { return showError(data2.error || 'Failed to update password'); }
+            document.getElementById('ok').style.display = 'block';
+            if (redirect) { setTimeout(function(){ window.location.href = redirect + (redirect.includes('?') ? '&' : '?') + 'msg=password_changed'; }, 800); }
+          } else {
+            return showError('Missing recovery token. If you did not open from email, use the profile reset link.');
+          }
         }catch(e){ showError('Network error'); }
       });
     })();
