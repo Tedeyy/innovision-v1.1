@@ -209,6 +209,11 @@ $breedData = array_values($breedCounts);
                 <input type="search" name="q" placeholder="Search" />
             </form>
         </div>
+        <div class="hamburger" aria-label="Toggle menu">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
         <div class="nav-right">
             <div class="greeting">hello <?php echo htmlspecialchars($firstname, ENT_QUOTES, 'UTF-8'); ?> • <?php echo htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8'); ?></div>
             <a class="btn" href="../logout.php">Logout</a>
@@ -221,6 +226,14 @@ $breedData = array_values($breedCounts);
             </a>
         </div>
     </nav>
+    <!-- Mobile Menu -->
+    <div class="mobile-menu">
+        <a href="pages/review_listings.php">Review Listings</a>
+        <a href="pages/transaction_monitoring.php">Transaction Monitoring</a>
+        <a href="../logout.php">Logout</a>
+        <a href="pages/profile.php">Profile</a>
+    </div>
+    <div class="menu-overlay"></div>
     <div id="notifPane" style="display:none;position:fixed;top:56px;right:16px;width:300px;max-height:50vh;overflow:auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 20px rgba(0,0,0,.08);z-index:10000;">
         <div style="padding:10px 12px;border-bottom:1px solid #f3f4f6;font-weight:600;">Notifications (<span id=\"notifCount\">0</span>)</div>
         <div id="notifList" style="padding:8px 0;">
@@ -290,6 +303,8 @@ $breedData = array_values($breedCounts);
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js'></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="/pages/script/notifications.js"></script>
+    <script src="/pages/script/mobile-menu.js"></script>
     <div id="bat-sales-data"
          data-labels='<?php echo json_encode($labels, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>'
          data-datasets='<?php echo json_encode($datasets, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>'

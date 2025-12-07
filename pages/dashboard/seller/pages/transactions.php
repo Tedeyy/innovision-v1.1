@@ -2,12 +2,62 @@
 session_start();
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
 require_once __DIR__ . '/../../../authentication/lib/use_case_logger.php';
+require_once __DIR__ . '/../../../common/notify.php';
 
 // Allow all roles; require login only
 $userId = (int)($_SESSION['user_id'] ?? 0);
 if ($userId === 0){
   $_SESSION['flash_error'] = 'Please sign in to view transactions.';
   header('Location: ../dashboard.php');
+  exit;
+}
+
+// Seller reports buyer from completed transaction
+if (isset($_POST['action']) && $_POST['action']==='report_user'){
+  header('Content-Type: application/json');
+  $sellerIdIn = isset($_POST['seller_id']) ? (int)$_POST['seller_id'] : 0;
+  $buyerIdIn  = isset($_POST['buyer_id']) ? (int)$_POST['buyer_id'] : 0;
+  $title = isset($_POST['title']) ? trim((string)$_POST['title']) : '';
+  $description = isset($_POST['description']) ? trim((string)$_POST['description']) : '';
+  if ($sellerIdIn !== $userId || $buyerIdIn<=0 || $title==='' || $description===''){
+    echo json_encode(['ok'=>false,'error'=>'invalid_params']); exit;
+  }
+
+  // Insert into reviewreportuser using reporter/reported schema
+  $payload = [[
+    'reporter_id'   => $sellerIdIn,
+    'reporter_role' => 'Seller',
+    'reported_id'   => $buyerIdIn,
+    'reported_role' => 'Buyer',
+    'title'         => $title,
+    'description'   => $description,
+    'Status'        => 'Pending'
+  ]];
+  [$res,$st,$err] = sb_rest('POST','reviewreportuser',[], $payload, ['Prefer: return=representation']);
+  if (!($st>=200 && $st<300)){
+    $detail = is_array($res) && isset($res['message']) ? $res['message'] : (is_string($res)?$res:'');
+    echo json_encode(['ok'=>false,'error'=>'insert_failed','code'=>$st,'detail'=>$detail]); exit;
+  }
+
+  // also log to userreport_logs with an available admin
+  [$arows,$ast,$aer] = sb_rest('GET','admin',[ 'select'=>'user_id', 'limit'=>1, 'order'=>'user_id.asc' ]);
+  $admin_id = ($ast>=200 && $ast<300 && is_array($arows) && isset($arows[0]['user_id'])) ? (int)$arows[0]['user_id'] : null;
+  if ($admin_id){
+    $log = [[
+      'report_id'      => $res[0]['report_id'] ?? null,
+      'reporter_id'    => $sellerIdIn,
+      'reporter_role'  => 'Seller',
+      'reported_id'    => $buyerIdIn,
+      'reported_role'  => 'Buyer',
+      'title'          => $title,
+      'description'    => $description,
+      'admin_id'       => $admin_id,
+      'Status'         => 'Pending',
+      'created'        => date('Y-m-d H:i:s')
+    ]];
+    sb_rest('POST','userreport_logs',[], $log, ['Prefer: return=minimal']);
+  }
+  echo json_encode(['ok'=>true]);
   exit;
 }
 
@@ -345,32 +395,36 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
   // Combine all transactions
   $allTransactions = array_merge($srows, $orows, $crows);
   
-  // Add thumbnail data to each transaction
+  // Add thumbnail data and extras to each transaction
   foreach ($allTransactions as &$tx) {
     if (isset($tx['listing_id']) && isset($tx['seller_id'])) {
       $listingId = (int)$tx['listing_id'];
       $sellerId = (int)$tx['seller_id'];
       $seller = $tx['seller'] ?? [];
       
-      // Thumbnail using market image path logic
-      $legacyFolder = $sellerId.'_'.$listingId;
-      $sellerName = trim(($seller['user_fname']??'').'_'.($seller['user_lname']??''));
-      $newFolder = $sellerId.'_'.$sellerName;
-      $created = $tx['listing']['created'] ?? '';
-      $createdKey = $created ? date('YmdHis', strtotime($created)) : '';
-      
-      // Determine status folder based on listing status
-      $status = strtolower($tx['listing']['status'] ?? 'active');
-      $statusFolder = 'active'; // default
-      if ($status === 'verified') $statusFolder = 'verified';
-      elseif ($status === 'sold') $statusFolder = 'sold';
-      elseif ($status === 'underreview') $statusFolder = 'underreview';
-      elseif ($status === 'denied') $statusFolder = 'denied';
-      
-      $tx['thumb'] = ($createdKey!==''
-        ? '../../bat/pages/storage_image.php?path=listings/'.$statusFolder.'/'.$newFolder.'/'.$createdKey.'_1img.jpg'
-        : '../../bat/pages/storage_image.php?path=listings/'.$statusFolder.'/'.$legacyFolder.'/image1');
-      $tx['thumb_fallback'] = '../../bat/pages/storage_image.php?path=listings/'.$statusFolder.'/'.$legacyFolder.'/image1';
+      // Build Supabase public image URLs for this listing
+      // Use created_at if available, otherwise fallback to created
+      $createdRaw = $tx['listing']['created_at'] ?? ($tx['listing']['created'] ?? '');
+      $createdKey = $createdRaw ? date('YmdHis', strtotime($createdRaw)) : '';
+      $fullName = trim(implode(' ', [
+        $seller['user_fname'] ?? '',
+        $seller['user_mname'] ?? '',
+        $seller['user_lname'] ?? ''
+      ]));
+      $sanitized = strtolower(preg_replace('/[^a-z0-9]+/i', '_', $fullName));
+      $sanitized = trim($sanitized, '_');
+      $folder = $sellerId . '_' . ($sanitized !== '' ? $sanitized : 'user');
+      $base = rtrim(sb_base_url(), '/');
+
+      $thumbs = [];
+      if ($base && $createdKey !== ''){
+        for ($i=1; $i<=3; $i++){
+          $thumbs[] = $base.'/storage/v1/object/public/listings/verified/'.$folder.'/'.$createdKey.'_'.$i.'img.jpg';
+        }
+      }
+      $tx['thumbs'] = $thumbs;
+      $tx['thumb'] = $thumbs[0] ?? '';
+      $tx['thumb_fallback'] = $thumbs[1] ?? ($thumbs[0] ?? '');
       
       // Add meet-up details from ongoingtransactions
       if (isset($tx['transaction_date'])) {
@@ -392,11 +446,11 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
       }
     }
   }
-  
   echo json_encode(['ok'=>true,'data'=>$allTransactions]);
   exit;
 }
 
+// Move Started -> Ongoing and notify buyer
 if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
   header('Content-Type: application/json');
   $listingId = isset($_POST['listing_id']) ? (int)$_POST['listing_id'] : 0;
@@ -408,7 +462,6 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
     exit;
   }
   
-  // First, get the transaction from starttransactions
   [$srows,$sst,$sse] = sb_rest('GET','starttransactions',[
     'select'=>'*',
     'listing_id'=>'eq.'.$listingId,
@@ -416,15 +469,12 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
     'buyer_id'=>'eq.'.$buyerId,
     'limit'=>1
   ]);
-  
   if (!($sst>=200 && $sst<300) || !is_array($srows) || empty($srows)){
     echo json_encode(['ok'=>false,'error'=>'transaction_not_found']);
     exit;
   }
-  
   $transaction = $srows[0];
-  
-  // Insert into ongoingtransactions
+
   [$ores,$ost,$ose] = sb_rest('POST','ongoingtransactions',[],[
     [
       'listing_id'=>$transaction['listing_id'],
@@ -434,53 +484,102 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
       'started_at'=>$transaction['started_at']
     ]
   ]);
-  
   if (!($ost>=200 && $ost<300)){
     echo json_encode(['ok'=>false,'error'=>'insert_ongoing_failed','code'=>$ost]);
     exit;
   }
-  
-  // Delete from starttransactions
+
   [$dres,$dst,$dse] = sb_rest('DELETE','starttransactions',[],[],[
     'listing_id'=>'eq.'.$listingId,
     'seller_id'=>'eq.'.$sellerId,
     'buyer_id'=>'eq.'.$buyerId
   ]);
-  
   if (!($dst>=200 && $dst<300)){
     echo json_encode(['ok'=>false,'error'=>'delete_start_failed','code'=>$dst]);
     exit;
   }
-  
+
+  if ($buyerId){
+    $title = 'Transaction Ongoing';
+    $msg = 'Your transaction (listing #'.$listingId.') is now ongoing. BAT will schedule the meet-up.';
+    notify_send((int)$buyerId,'buyer',$title,$msg,(int)$listingId,'transaction');
+  }
   echo json_encode(['ok'=>true]);
   exit;
 }
 
 ?>
 
-<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Transactions</title>
+  <title>Seller Transactions</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../style/dashboard.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     .modal{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:9999}
-    .panel{background:#fff;border-radius:10px;max-width:1200px;width:98vw;max-height:95vh;overflow:auto;padding:20px}
+    /* Ensure Report Buyer modal appears above Transaction Details modal */
+    #reportBuyerModal{z-index:10001}
+    .panel{background:#fff;border-radius:10px;max-width:900px;width:95vw;max-height:90vh;overflow:auto;padding:16px}
     .subtle{color:#4a5568;font-size:12px}
     .table{width:100%;border-collapse:collapse}
     .table th,.table td{padding:8px;text-align:left}
     .table thead tr{border-bottom:1px solid #e2e8f0}
     .close-btn{background:#e53e3e;color:#fff;border:none;border-radius:6px;padding:6px 10px;cursor:pointer}
-    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}
-    .badge-started{background:#ebf5ff;color:#1e40af;border:1px solid #bfdbfe}
-    .badge-ongoing{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
-    .badge-completed{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
-    .badge-default{background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}
+
+    /* Mobile adjustments */
+    @media (max-width: 640px) {
+      body { font-size: 12px; }
+
+      .wrap {
+        padding: 8px;
+      }
+
+      .top h1 {
+        font-size: 18px;
+      }
+
+      .btn {
+        font-size: 12px;
+        padding: 6px 10px;
+      }
+
+      .table th,
+      .table td {
+        padding: 4px 6px;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .table {
+        display: block;
+        overflow-x: auto;
+      }
+
+      .panel {
+        max-width: 100vw;
+        width: 96vw;
+        padding: 10px;
+      }
+
+      #txBody h3 {
+        font-size: 14px;
+      }
+
+      #txBody div {
+        font-size: 12px;
+      }
+
+      #rateStarsSeller {
+        font-size: 22px;
+      }
+
+      textarea,
+      input[type="text"] {
+        font-size: 12px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -490,7 +589,50 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
       <div>
         <a class="btn" href="../dashboard.php">Back to Dashboard</a>
       </div>
+    </div>
 
+    <div class="card">
+      <table class="table" id="txTable">
+        <thead>
+          <tr>
+            <th>Buyer</th>
+            <th>Listing</th>
+            <th>Status</th>
+            <th>Started</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Report Buyer Modal -->
+  <div id="reportBuyerModal" class="modal">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <h2 style="margin:0;">Report Buyer</h2>
+        <button class="close-btn" data-close="reportBuyerModal">Close</button>
+      </div>
+      <div style="margin-top:8px;display:grid;gap:10px;">
+        <input type="hidden" id="repBuyerId" />
+        <div>
+          <label style="display:block;font-weight:600;margin-bottom:4px;">Title</label>
+          <input type="text" id="repTitle" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
+        </div>
+        <div>
+          <label style="display:block;font-weight:600;margin-bottom:4px;">Description</label>
+          <textarea id="repDesc" style="width:100%;min-height:120px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn" id="btnSubmitReportBuyer">Submit Report</button>
+          <span id="repMsg" class="subtle"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rate Buyer Modal -->
   <div id="rateModalSeller" class="modal">
     <div class="panel">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
@@ -514,25 +656,8 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
       </div>
     </div>
   </div>
-    </div>
 
-    <div class="card">
-      <table class="table" id="txTable">
-        <thead>
-          <tr>
-            <th>Tx ID</th>
-            <th>Buyer</th>
-            <th>Listing</th>
-            <th>Status</th>
-            <th>Started</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </div>
-
+  <!-- Transaction Details Modal -->
   <div id="txModal" class="modal">
     <div class="panel">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
@@ -540,39 +665,6 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
         <button class="close-btn" data-close="txModal">Close</button>
       </div>
       <div id="txBody" style="margin-top:8px;"></div>
-    </div>
-  </div>
-
-  <div id="completeModal" class="modal">
-    <div class="panel">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <h2 style="margin:0;">Complete Transaction</h2>
-        <button class="close-btn" data-close="completeModal">Close</button>
-      </div>
-      <div style="margin-top:8px;">
-        <div style="display:grid;gap:10px;">
-          <div>
-            <label style="display:block;font-weight:600;margin-bottom:4px;">Result</label>
-            <label style="margin-right:16px;"><input type="radio" name="txResult" value="successful" checked> Successful</label>
-            <label><input type="radio" name="txResult" value="unsuccessful"> Unsuccessful</label>
-          </div>
-          <div>
-            <label style="display:block;font-weight:600;margin-bottom:4px;">Final Price (₱)</label>
-            <input type="number" id="txPrice" step="0.01" min="0" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
-          </div>
-          <div>
-            <label style="display:block;font-weight:600;margin-bottom:4px;">Payment Method</label>
-            <input type="text" id="txPayment" placeholder="e.g. Cash" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
-          </div>
-          <div>
-            <label style="display:block;font-weight:600;margin-bottom:4px;">Documentary Photo (optional if unsuccessful)</label>
-            <input type="file" id="txDoc" accept="image/*" />
-          </div>
-          <div>
-            <button class="btn" id="btnSubmitComplete">Submit</button>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -585,6 +677,18 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
       $all('.close-btn').forEach(function(b){ b.addEventListener('click', function(){ closeModal(b.getAttribute('data-close')); }); });
 
       function fullname(p){ if (!p) return ''; var f=p.user_fname||'', m=p.user_mname||'', l=p.user_lname||''; return (f+' '+(m?m+' ':'')+l).trim(); }
+
+      function formatStarted(ts){
+        if (!ts) return '';
+        var d = new Date(ts);
+        if (isNaN(d.getTime())) return ts; // fallback if parse fails
+        var hh = String(d.getHours()).padStart(2,'0');
+        var mm = String(d.getMinutes()).padStart(2,'0');
+        var month = String(d.getMonth()+1).padStart(2,'0');
+        var day = String(d.getDate()).padStart(2,'0');
+        var year = d.getFullYear();
+        return hh+':'+mm+' '+month+'/'+day+'/'+year;
+      }
       function statusBadge(s){
         var t=(s||'').toLowerCase();
         if (t==='started') return '<span class="badge badge-started">Started</span>';
@@ -592,31 +696,21 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
         if (t==='completed') return '<span class="badge badge-completed">Completed</span>';
         return '<span class="badge badge-default">'+(s||'')+'</span>';
       }
+
       function load(){
         fetch('transactions.php?action=list', { credentials:'same-origin' })
           .then(function(r){ return r.json(); })
           .then(function(res){
             var tb = document.querySelector('#txTable tbody');
             tb.innerHTML = '';
-            if (!res || res.ok===false){
-              var tr = document.createElement('tr');
-              var td = document.createElement('td'); td.colSpan = 6; td.style.color = '#7f1d1d';
-              td.textContent = 'Failed to load transactions'+(res && res.code? (' (code '+res.code+')') : '');
-              tr.appendChild(td); tb.appendChild(tr); return;
-            }
-            if (!res.data || res.data.length===0){
-              var tr = document.createElement('tr'); var td = document.createElement('td'); td.colSpan = 6; td.textContent = 'No transactions found.'; tr.appendChild(td); tb.appendChild(tr); return;
-            }
             (res.data||[]).forEach(function(row){
-              var buyer = row.buyer||{}; var seller = row.seller||{}; var listing = row.listing||{};
-              var role = (row.seller_id == <?php echo (int)$userId; ?>) ? 'Seller' : 'Buyer';
-              var counterparty = role==='Seller' ? (function(p){var f=p.user_fname||'',m=p.user_mname||'',l=p.user_lname||'';return (f+' '+(m?m+' ':'')+l).trim();})(buyer) : (function(p){var f=p.user_fname||'',m=p.user_mname||'',l=p.user_lname||'';return (f+' '+(m?m+' ':'')+l).trim();})(seller);
+              var buyer = row.buyer||{}; var listing = row.listing||{};
               var tr = document.createElement('tr');
-              tr.innerHTML = '<td>'+ (row.transaction_id||'') +'</td>'+
-                '<td>'+ counterparty +'</td>'+
+              tr.innerHTML =
+                '<td>'+ fullname(buyer) +'</td>'+
                 '<td>'+(listing.livestock_type||'')+' • '+(listing.breed||'')+'</td>'+
                 '<td>'+ statusBadge(row.status) +'</td>'+
-                '<td>'+(row.started_at||'')+'</td>'+
+                '<td>'+ formatStarted(row.started_at||'') +'</td>'+
                 '<td><button class="btn btn-show" data-row="'+encodeURIComponent(JSON.stringify(row))+'">Show</button></td>';
               tb.appendChild(tr);
             });
@@ -627,215 +721,123 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
       document.addEventListener('click', function(e){
         if (e.target && e.target.classList.contains('btn-show')){
           var data = JSON.parse(decodeURIComponent(e.target.getAttribute('data-row')||'{}'));
-          var buyer = data.buyer||{}; var seller = data.seller||{}; var listing = data.listing||{};
+          var seller = data.seller||{}; var buyer = data.buyer||{}; var listing = data.listing||{};
           var body = document.getElementById('txBody');
-          var img = document.createElement('img');
-          img.src = data.thumb || '';
-          img.alt = 'thumb';
-          img.style.width = '160px'; img.style.height='160px'; img.style.objectFit='cover'; img.style.border='1px solid #e2e8f0'; img.style.borderRadius='8px';
-          img.onerror = function(){ if (data.thumb_fallback && img.src!==data.thumb_fallback) img.src = data.thumb_fallback; else img.style.display='none'; };
           function initials(p){ var f=(p.user_fname||'').trim(), l=(p.user_lname||'').trim(); var s=(f?f[0]:'')+(l?l[0]:''); return s.toUpperCase()||'U'; }
           function avatarHTML(p){ var ini=initials(p); return '<div style="width:40px;height:40px;border-radius:50%;background:#edf2f7;color:#2d3748;display:flex;align-items:center;justify-content:center;font-weight:600;">'+ini+'</div>'; }
-          // Display meet-up information if status is ongoing or completed
-          var meetUpInfo = '';
-          if (String(data.status||'').toLowerCase() === 'ongoing' || String(data.status||'').toLowerCase() === 'completed') {
-            meetUpInfo = 
-              '<div style="margin-top:14px;padding:12px;background:#f7fafc;border-radius:6px;">'+
-                '<h4 style="margin:0 0 8px 0;color:#2d3748;">Meet-Up Details</h4>'+
-                '<div style="display:flex;gap:16px;flex-wrap:wrap;">'+
-                  '<div><strong>Date:</strong> '+(data.meetup_date || 'Not set')+'</div>'+
-                  '<div><strong>Time:</strong> '+(data.meetup_time || 'Not set')+'</div>'+
-                '</div>'+
-                '<div style="margin-top:8px;"><strong>Location:</strong> '+(data.meetup_location || 'Not set')+'</div>'+
-                '<div style="margin-top:8px;"><strong>BAT Representative:</strong> '+(data.bat_fullname || 'Not assigned')+'</div>'+
-              '</div>';
+
+          var meetupInfo = '';
+          if (data.meetup_date || data.meetup_time || data.meetup_location || data.bat_fullname){
+            meetupInfo = '<h3 style="margin-top:10px;">Meet-up Details</h3>'+
+              '<div>Date: '+(data.meetup_date||'N/A')+'</div>'+
+              '<div>Time: '+(data.meetup_time||'N/A')+'</div>'+
+              '<div>Location: '+(data.meetup_location||'N/A')+'</div>'+
+              '<div>BAT: '+(data.bat_fullname||'N/A')+'</div>';
           }
-          
-          var noteText = String(data.status||'').toLowerCase() === 'started' ? 
-            'Note: Meet-up date and location will be set by BAT.' : 
-            'Note: Meet-up details have been set by BAT.';
 
           body.innerHTML = ''+
-            '<div style="display:grid;gap:20px;">'+
-              <!-- TOP: Listing Details with Image and Location -->
-              '<div>'+
-                '<h3>Listing Details</h3>'+
-                '<div style="display:flex;gap:16px;align-items:flex-start;">'+
-                  '<div>'+
-                    '<div id="imgWrap" style="margin-bottom:8px;"></div>'+
-                    '<div><strong>'+(listing.livestock_type||'')+' • '+(listing.breed||'')+'</strong></div>'+
-                    '<div>Price: ₱'+(listing.price||'')+'</div>'+
-                    '<div>Address: '+(listing.address||'')+'</div>'+
-                    '<div class="subtle">Listing #'+(listing.listing_id||'')+' • Created '+(listing.created||'')+'</div>'+
-                  '</div>'+
-                  '<div style="flex:1;">'+
-                    '<div id="txMap" style="height:300px;border-radius:8px;border:1px solid #e2e8f0;"></div>'+
-                  '</div>'+
-                '</div>'+
-              '</div>'+
-              
-              <!-- MIDDLE: Seller and Buyer Information -->
-              '<div>'+
-                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">'+
-                  '<div>'+
-                    '<h4>Seller</h4>'+
-                    '<div style="display:flex;gap:10px;align-items:flex-start;">'+ avatarHTML(seller) +
-                      '<div><div><strong>'+fullname(seller)+'</strong></div><div>Email: '+(seller.email||'')+'</div><div>Contact: '+(seller.contact||'')+'</div></div>'+
-                    '</div>'+
-                  '</div>'+
-                  '<div>'+
-                    '<h4>Buyer</h4>'+
-                    '<div style="display:flex;gap:10px;align-items:flex-start;">'+ avatarHTML(buyer) +
-                      '<div><div><strong>'+fullname(buyer)+'</strong></div><div>Email: '+(buyer.email||'')+'</div><div>Contact: '+(buyer.contact||'')+'</div></div>'+
-                    '</div>'+
-                  '</div>'+
-                '</div>'+
-              '</div>'+
-              
-              <!-- BOTTOM: Everything Else -->
-              '<div>'+
-                '<div style="margin-top:14px;color:#4a5568;">'+noteText+'</div>'+
-                meetUpInfo+
-                '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">'+
-                  ((String(data.status||'').toLowerCase() === 'started') ? '<button class="btn" id="btnSchedule">Schedule Meet-Up</button>' : '')+
-                  ((String(data.status||'').toLowerCase() === 'ongoing') ? '<button class="btn" id="btnDone">Done</button>' : '')+
-                  ((String(data.status||'').toLowerCase()==='completed') ? '<button class="btn" id="btnRateBuyer">Rate Buyer</button>' : '')+
-                '</div>'+
-              '</div>'+
+            '<h3>Listing</h3>'+
+            '<div style="display:flex;gap:12px;align-items:flex-start;">'+
+              '<div><strong>'+(listing.livestock_type||'')+' • '+(listing.breed||'')+'</strong><div>Price: ₱'+(listing.price||'')+'</div><div>Address: '+(listing.address||'')+'</div><div class="subtle">Listing #'+(listing.listing_id||'')+' • Created '+(listing.created||'')+'</div></div>'+
+              '<div id="imgWrap"></div>'+
+            '</div>'+
+            '<hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0" />'+
+            '<h3>Seller</h3>'+
+            '<div style="display:flex;gap:10px;align-items:flex-start;">'+ avatarHTML(seller) +
+              '<div><div><strong>'+fullname(seller)+'</strong></div><div>Email: '+(seller.email||'')+'</div><div>Contact: '+(seller.contact||'')+'</div></div>'+
+            '</div>'+
+            '<h3 style="margin-top:10px;">Buyer</h3>'+
+            '<div style="display:flex;gap:10px;align-items:flex-start;">'+ avatarHTML(buyer) +
+              '<div><div><strong>'+fullname(buyer)+'</strong></div><div>Email: '+(buyer.email||'')+'</div><div>Contact: '+(buyer.contact||'')+'</div></div>'+
+            '</div>'+
+            meetupInfo+
+            '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">'+
+              '<button class="btn" id="btnSetMeetup">Set Meet-Up</button>'+ 
+              '<button class="btn" id="btnRateBuyer">Rate Buyer</button>'+ 
+              '<button class="btn" id="btnReportBuyer" style="background:#ef4444;color:#fff;">Report Buyer</button>'+ 
             '</div>';
-          var wrap = document.getElementById('imgWrap'); if (wrap) wrap.appendChild(img);
-          // Map (read-only)
-          setTimeout(function(){
-            var mEl = document.getElementById('txMap'); if (!mEl || !window.L) return;
-            var map = L.map(mEl).setView([8.314209 , 124.859425], 12);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-            var marker = null;
-            if (data.lat!=null && data.lng!=null){
-              map.setView([data.lat, data.lng], 12);
-              marker = L.marker([data.lat, data.lng]).addTo(map);
-            }
-          }, 0);
+
+          var wrap = document.getElementById('imgWrap');
+          if (wrap){
+            var imgs = (data.thumbs && data.thumbs.length) ? data.thumbs : (data.thumb ? [data.thumb] : []);
+            imgs.forEach(function(url){
+              if (!url) return;
+              var im = document.createElement('img');
+              im.src = url;
+              im.alt = 'listing';
+              im.style.width = '160px';
+              im.style.height = '160px';
+              im.style.objectFit = 'cover';
+              im.style.border = '1px solid #e2e8f0';
+              im.style.borderRadius = '8px';
+              im.style.marginRight = '6px';
+              im.onerror = function(){ im.style.display='none'; };
+              wrap.appendChild(im);
+            });
+          }
           openModal('txModal');
-          
-          // Wait for DOM to update before attaching event listeners
-          setTimeout(function(){
-            // Attach event listeners after modal is opened and buttons exist
-            var schedBtn = document.getElementById('btnSchedule');
-            var doneBtn = document.getElementById('btnDone');
-            
-            if (schedBtn){
-              schedBtn.addEventListener('click', function(){
-                var fd = new FormData();
-                fd.append('action','schedule_meetup');
-                fd.append('listing_id', (listing.listing_id||''));
-                fd.append('seller_id', (data.seller_id||''));
-                fd.append('buyer_id', (data.buyer_id||''));
-                schedBtn.disabled = true; schedBtn.textContent = 'Scheduling...';
-                fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
-                  .then(function(r){ return r.json(); })
-                  .then(function(res){
-                    if (!res || res.ok===false){
-                      alert('Failed to move to Ongoing'+(res && res.code? (' (code '+res.code+')') : ''));
-                      schedBtn.disabled = false; schedBtn.textContent = 'Schedule Meet-Up';
-                    } else {
-                      alert('Transaction moved to Ongoing.');
-                      schedBtn.disabled = true; schedBtn.textContent = 'Scheduled';
-                    }
-                  })
-                  .catch(function(){ schedBtn.disabled = false; schedBtn.textContent = 'Schedule Meet-Up'; });
-              });
-            }
-            
-            if (doneBtn){
-              doneBtn.addEventListener('click', function(){
-                try {
-                  var cm = document.getElementById('completeModal');
-                  if (!cm) {
-                    alert('Error: Completion modal not found');
-                    return;
-                  }
-                  if (!data || !data.transaction_id) {
-                    alert('Error: Invalid transaction data');
-                    return;
-                  }
-                  cm.setAttribute('data-tx', encodeURIComponent(JSON.stringify(data)));
-                  openModal('completeModal');
-                } catch (error) {
-                  console.error('Error opening completion modal:', error);
-                  alert('Error: Failed to open completion modal');
-                }
-              });
-            }
-          }, 100); // 100ms delay to ensure DOM is updated
+
+          var statusLower = String(data.status||'').toLowerCase();
+          var isCompleted = statusLower==='completed';
+          var isStarted = statusLower==='started';
           var rateBtn = document.getElementById('btnRateBuyer');
+          var reportBtn = document.getElementById('btnReportBuyer');
+          var meetBtn = document.getElementById('btnSetMeetup');
+          if (rateBtn){ rateBtn.disabled = !isCompleted; }
+          // Report Buyer is allowed for all statuses
+          if (reportBtn){ reportBtn.disabled = false; }
+          if (meetBtn){ meetBtn.disabled = !isStarted; }
+
           if (rateBtn){
             rateBtn.addEventListener('click', function(){
-              // check if already rated
-              fetch('transactions.php?action=has_rating&transaction_id='+ encodeURIComponent(data.transaction_id||''), { credentials:'same-origin' })
+              if (!isCompleted) return;
+              var rm = document.getElementById('rateModalSeller');
+              rm.setAttribute('data-buyer', String(data.buyer_id||''));
+              rm.setAttribute('data-transaction', String(data.transaction_id||''));
+              openModal('rateModalSeller');
+            });
+          }
+
+          if (reportBtn){
+            reportBtn.addEventListener('click', function(){
+              var hid = document.getElementById('repBuyerId');
+              if (hid) hid.value = String(data.buyer_id||'');
+              openModal('reportBuyerModal');
+            });
+          }
+
+          if (meetBtn){
+            meetBtn.addEventListener('click', function(){
+              if (!isStarted) return;
+              if (!confirm('Set this transaction as ongoing and request BAT to schedule the meet-up?')) return;
+              var fd = new FormData();
+              fd.append('action','schedule_meetup');
+              fd.append('listing_id', String(data.listing_id||''));
+              fd.append('seller_id', String(data.seller_id||''));
+              fd.append('buyer_id', String(data.buyer_id||''));
+              meetBtn.disabled = true; meetBtn.textContent = 'Setting...';
+              fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
                 .then(function(r){ return r.json(); })
                 .then(function(res){
-                  if (res && res.has_rating){
-                    alert('You already rated this transaction.');
-                    rateBtn.disabled = true; rateBtn.textContent = 'Already Rated';
-                    return;
+                  meetBtn.disabled = false; meetBtn.textContent = 'Set Meet-Up';
+                  if (!res || res.ok===false){
+                    alert('Failed to set meet-up'+(res && res.code? (' (code '+res.code+')') : ''));
+                  } else {
+                    alert('Transaction moved to Ongoing. BAT will schedule the meet-up.');
+                    closeModal('txModal');
+                    load();
                   }
-                  var rm = document.getElementById('rateModalSeller');
-                  rm.setAttribute('data-buyer', String(data.buyer_id||''));
-                  rm.setAttribute('data-transaction', String(data.transaction_id||''));
-                  openModal('rateModalSeller');
+                })
+                .catch(function(err){
+                  meetBtn.disabled = false; meetBtn.textContent = 'Set Meet-Up';
+                  alert('Network error: '+err.message);
                 });
             });
           }
         }
       });
 
-      ['txModal','completeModal','rateModalSeller'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.addEventListener('click', function(ev){ if(ev.target===el) closeModal(id); }); }});
-
-      var btnSubmitComplete = document.getElementById('btnSubmitComplete');
-      if (btnSubmitComplete){
-        btnSubmitComplete.addEventListener('click', function(){
-          var cm = document.getElementById('completeModal');
-          var raw = cm.getAttribute('data-tx')||'';
-          var tx = {};
-          try{ tx = JSON.parse(decodeURIComponent(raw)); }catch(e){}
-          var result = (document.querySelector('input[name="txResult"]:checked')||{}).value||'successful';
-          var price = (document.getElementById('txPrice')||{}).value||'';
-          var paym  = (document.getElementById('txPayment')||{}).value||'';
-          var file  = (document.getElementById('txDoc')||{}).files ? (document.getElementById('txDoc').files[0]||null) : null;
-          if (!price){ alert('Please enter final price'); return; }
-          if (!paym){ alert('Please enter payment method'); return; }
-          var fd = new FormData();
-          fd.append('action','complete_transaction');
-          fd.append('transaction_id', tx.transaction_id||'');
-          fd.append('listing_id', tx.listing_id||'');
-          fd.append('seller_id', tx.seller_id||'');
-          fd.append('buyer_id', tx.buyer_id||'');
-          fd.append('result', result);
-          fd.append('price', price);
-          fd.append('payment_method', paym);
-          if (file) fd.append('doc_photo', file);
-          btnSubmitComplete.disabled = true; btnSubmitComplete.textContent = 'Submitting...';
-          fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
-            .then(function(r){ return r.json(); })
-            .then(function(res){
-              if (!res || res.ok===false){
-                alert('Failed to complete transaction'+(res && res.code? (' (code '+res.code+')') : ''));
-                btnSubmitComplete.disabled = false; btnSubmitComplete.textContent = 'Submit';
-              } else {
-                alert('Transaction completed successfully as ' + (res.result || 'successful') + '.');
-                btnSubmitComplete.disabled = true; btnSubmitComplete.textContent = 'Saved';
-                closeModal('completeModal');
-                closeModal('txModal');
-                window.location.href = 'completion.php';
-              }
-            })
-            .catch(function(err){
-              console.error('Error completing transaction:', err);
-              alert('Error: Failed to complete transaction');
-              btnSubmitComplete.disabled = false; btnSubmitComplete.textContent = 'Submit';
-            });
-        });
-      }
+      ['txModal','rateModalSeller','reportBuyerModal'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.addEventListener('click', function(ev){ if(ev.target===el) closeModal(id); }); }});
 
       // Seller rating stars
       var currentRatingSeller = 5;
@@ -848,6 +850,7 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
       if (starsWrapSeller){
         starsWrapSeller.addEventListener('click', function(e){ var v=parseInt(e.target.getAttribute('data-v'),10); if(!isNaN(v)){ currentRatingSeller = v; paintStarsSeller(currentRatingSeller); } });
       }
+
       var btnSubmitRatingSeller = document.getElementById('btnSubmitRatingSeller');
       if (btnSubmitRatingSeller){
         btnSubmitRatingSeller.addEventListener('click', function(){
@@ -871,10 +874,38 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
                 btnSubmitRatingSeller.disabled = false; btnSubmitRatingSeller.textContent = 'Submit Rating';
               } else {
                 btnSubmitRatingSeller.textContent = 'Thanks!';
-                setTimeout(function(){ closeModal('rateModalSeller'); }, 600);
+                setTimeout(function(){ closeModal('rateModalSeller'); closeModal('txModal'); }, 600);
               }
             })
             .catch(function(){ btnSubmitRatingSeller.disabled = false; btnSubmitRatingSeller.textContent = 'Submit Rating'; });
+        });
+      }
+
+      // Submit report
+      var btnSubmitReportBuyer = document.getElementById('btnSubmitReportBuyer');
+      if (btnSubmitReportBuyer){
+        btnSubmitReportBuyer.addEventListener('click', function(){
+          var buyerId = parseInt((document.getElementById('repBuyerId')||{}).value||'0',10) || 0;
+          var title = (document.getElementById('repTitle')||{}).value||'';
+          var desc = (document.getElementById('repDesc')||{}).value||'';
+          var msg = document.getElementById('repMsg'); if (msg){ msg.textContent=''; }
+          if (title.trim()==='' || desc.trim()===''){ if (msg){ msg.textContent='Please fill in title and description.'; msg.style.color='#e53e3e'; } return; }
+          var fd = new FormData();
+          fd.append('action','report_user');
+          fd.append('seller_id','<?php echo (int)$userId; ?>');
+          fd.append('buyer_id', String(buyerId));
+          fd.append('title', title);
+          fd.append('description', desc);
+          btnSubmitReportBuyer.disabled = true; var old = btnSubmitReportBuyer.textContent; btnSubmitReportBuyer.textContent='Submitting...';
+          fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(res){
+              btnSubmitReportBuyer.disabled = false; btnSubmitReportBuyer.textContent = old;
+              if (res && res.ok){ if (msg){ msg.textContent='Thank you for helping make our community better.'; msg.style.color='#38a169'; }
+                setTimeout(function(){ closeModal('reportBuyerModal'); closeModal('txModal'); }, 800);
+              } else { if (msg){ msg.textContent='Failed: '+(res && res.error? res.error : 'Unknown error'); msg.style.color='#e53e3e'; } }
+            })
+            .catch(function(err){ btnSubmitReportBuyer.disabled=false; btnSubmitReportBuyer.textContent=old; if (msg){ msg.textContent='Network error: '+err.message; msg.style.color='#e53e3e'; } });
         });
       }
     })();

@@ -1,6 +1,14 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
+// Fetch data from Supabase
+function sa_get($table, $params){
+  [$rows,$st,$err] = sb_rest('GET',$table,$params);
+  return ($st>=200 && $st<300 && is_array($rows)) ? $rows : [];
+}
+$suspicious = sa_get('suspicious_login_attempts', ['select'=>'slogin_id,username,ip_address,incident_report,log_time','order'=>'log_time.desc']);
+$blacklist  = sa_get('blacklist', ['select'=>'block_id,ip_address,reason,admin_id,blocked_at','order'=>'blocked_at.desc']);
+$loginlogs  = sa_get('login_logs', ['select'=>'login_id,user_id,ip_address,log_time','order'=>'log_time.desc','limit'=>'50']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -69,6 +77,19 @@ require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
     .status-suspicious { background: #fef3c7; color: #92400e; }
     .status-blocked { background: #fee2e2; color: #991b1b; }
     .status-active { background: #d1fae5; color: #065f46; }
+    @media (max-width:640px){
+      .security-table{font-size:12px}
+      .security-table th{padding:8px 10px}
+      .security-table td{padding:8px 10px}
+      .table-container{margin-top:10px}
+      .btn-block{padding:6px 10px;font-size:12px;border-radius:6px}
+      .status-badge{padding:2px 6px;font-size:11px}
+      #status{grid-template-columns:1fr !important;gap:8px}
+      .navbar{padding:8px 10px}
+      .wrap .card{padding:12px}
+      /* Make wide tables fit */
+      #events, .security-table{table-layout:fixed;word-wrap:break-word}
+    }
   </style>
 </head>
 <body>
@@ -100,27 +121,16 @@ require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
             </tr>
           </thead>
           <tbody>
-            <tr data-id="1" data-ip="192.168.1.100">
-              <td>2024-01-15 14:32:18</td>
-              <td>admin</td>
-              <td>192.168.1.100</td>
-              <td>Multiple failed login attempts - 5 tries in 2 minutes</td>
-              <td><span class="status-badge status-suspicious">Suspicious</span></td>
-            </tr>
-            <tr data-id="2" data-ip="10.0.0.50">
-              <td>2024-01-15 13:15:42</td>
-              <td>root</td>
-              <td>10.0.0.50</td>
-              <td>Brute force attack detected - unusual login pattern</td>
-              <td><span class="status-badge status-suspicious">Suspicious</span></td>
-            </tr>
-            <tr data-id="3" data-ip="172.16.0.25">
-              <td>2024-01-15 12:08:55</td>
-              <td>testuser</td>
-              <td>172.16.0.25</td>
-              <td>Suspicious activity - login from unauthorized location</td>
-              <td><span class="status-badge status-suspicious">Suspicious</span></td>
-            </tr>
+            <?php if (is_array($suspicious)):
+              foreach ($suspicious as $row): ?>
+              <tr data-id="<?php echo (int)($row['slogin_id']??0); ?>" data-ip="<?php echo htmlspecialchars($row['ip_address']??'', ENT_QUOTES,'UTF-8'); ?>">
+                <td><?php echo htmlspecialchars($row['log_time']??'', ENT_QUOTES,'UTF-8'); ?></td>
+                <td><?php echo htmlspecialchars($row['username']??'', ENT_QUOTES,'UTF-8'); ?></td>
+                <td><?php echo htmlspecialchars($row['ip_address']??'', ENT_QUOTES,'UTF-8'); ?></td>
+                <td><?php echo htmlspecialchars($row['incident_report']??'', ENT_QUOTES,'UTF-8'); ?></td>
+                <td><span class="status-badge status-suspicious">Suspicious</span></td>
+              </tr>
+            <?php endforeach; endif; ?>
           </tbody>
         </table>
       </div>
@@ -141,20 +151,16 @@ require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>203.0.113.1</td>
-              <td>Repeated brute force attacks on admin account</td>
-              <td>Admin User</td>
-              <td>2024-01-10 09:15:30</td>
-              <td><span class="status-badge status-blocked">Blocked</span></td>
-            </tr>
-            <tr>
-              <td>198.51.100.45</td>
-              <td>Suspicious login attempts from multiple accounts</td>
-              <td>Security Admin</td>
-              <td>2024-01-08 16:42:18</td>
-              <td><span class="status-badge status-blocked">Blocked</span></td>
-            </tr>
+            <?php if (is_array($blacklist)):
+              foreach ($blacklist as $row): ?>
+              <tr>
+                <td><?php echo htmlspecialchars($row['ip_address']??'', ENT_QUOTES,'UTF-8'); ?></td>
+                <td><?php echo htmlspecialchars($row['reason']??'', ENT_QUOTES,'UTF-8'); ?></td>
+                <td><?php echo htmlspecialchars((string)($row['admin_id']??''), ENT_QUOTES,'UTF-8'); ?></td>
+                <td><?php echo htmlspecialchars($row['blocked_at']??'', ENT_QUOTES,'UTF-8'); ?></td>
+                <td><span class="status-badge status-blocked">Blocked</span></td>
+              </tr>
+            <?php endforeach; endif; ?>
           </tbody>
         </table>
       </div>
@@ -172,7 +178,17 @@ require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
               <th style="padding:8px">Details</th>
             </tr>
           </thead>
-          <tbody></tbody>
+          <tbody>
+            <?php if (is_array($loginlogs)):
+              foreach ($loginlogs as $row): ?>
+              <tr>
+                <td style="padding:8px;border-bottom:1px solid #f3f4f6;">&nbsp;<?php echo htmlspecialchars($row['log_time']??'', ENT_QUOTES,'UTF-8'); ?></td>
+                <td style="padding:8px;border-bottom:1px solid #f3f4f6;">User #<?php echo (int)($row['user_id']??0); ?></td>
+                <td style="padding:8px;border-bottom:1px solid #f3f4f6;">Login</td>
+                <td style="padding:8px;border-bottom:1px solid #f3f4f6;">IP: <?php echo htmlspecialchars($row['ip_address']??'', ENT_QUOTES,'UTF-8'); ?></td>
+              </tr>
+            <?php endforeach; endif; ?>
+          </tbody>
         </table>
       </div>
     </div>
@@ -227,21 +243,8 @@ require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
         .then(data => {
           if (data.success) {
             alert(`IP address ${selectedIP} has been blocked successfully.`);
-            
-            // Remove the row from suspicious table
-            if (selectedRow) {
-              selectedRow.remove();
-              selectedRow = null;
-              selectedIP = null;
-              document.getElementById('blockBtn').disabled = true;
-            }
-            
-            // Add to blacklist table
-            addBlacklistEntry(selectedIP, 'Blocked due to suspicious login activity', 'Current Admin', new Date().toLocaleString());
-            
-            // Refresh data
-            loadSuspiciousAttempts();
-            loadBlacklist();
+            // Reload to reflect changes
+            location.reload();
           } else {
             alert('Failed to block IP address: ' + (data.error || 'Unknown error'));
           }
@@ -265,21 +268,7 @@ require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
       `;
     }
     
-    function loadSuspiciousAttempts() {
-      // In real implementation, fetch from database
-      // For now, using static data
-    }
-    
-    function loadBlacklist() {
-      // In real implementation, fetch from database
-      // For now, using static data
-    }
-    
-    // Load data on page load
-    document.addEventListener('DOMContentLoaded', function() {
-      loadSuspiciousAttempts();
-      loadBlacklist();
-    });
+    // Initial rows are server-rendered; no client reload needed on load
   </script>
 </body>
 </html>

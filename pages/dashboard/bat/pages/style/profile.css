@@ -10,3 +10,16 @@ button.primary{background:#3182ce;color:#fff;border:none;padding:10px 16px;borde
 .notice{margin-bottom:12px;color:#4a5568}
 .success{color:#2f855a}
 .error{color:#c53030}
+
+@media (max-width: 640px){
+  body{padding:12px}
+  .container{max-width:100%}
+  .card{padding:12px;border-radius:10px}
+  form{grid-template-columns:1fr;gap:10px}
+  .field label{font-size:12px;margin-bottom:4px}
+  .field input, .field select, .field textarea{padding:8px 10px;font-size:14px}
+  .actions{gap:8px;justify-content:space-between}
+  .actions a, .actions button{padding:8px 12px;border-radius:8px;font-size:12px}
+  button.primary{padding:8px 12px}
+  .notice{font-size:12px}
+}

@@ -1,19 +1,22 @@
-document.addEventListener('DOMContentLoaded', function(){
-  var btn = document.getElementById('login-btn');
-  var dataEl = document.getElementById('login-data');
-  var cd = 0;
+document.addEventListener('DOMContentLoaded', function() {
+  // Handle login cooldown timer
+  const btn = document.getElementById('login-btn');
+  const dataEl = document.getElementById('login-data');
+  let cd = 0;
+  
   if (dataEl) {
-    var val = dataEl.getAttribute('data-cooldown');
+    const val = dataEl.getAttribute('data-cooldown');
     cd = parseInt(val || '0', 10) || 0;
   }
-  if (btn && cd > 0){
+  
+  if (btn && cd > 0) {
     btn.disabled = true;
-    var span = document.getElementById('cooldown-secs');
-    var left = cd;
-    var timer = setInterval(function(){
+    const span = document.getElementById('cooldown-secs');
+    let left = cd;
+    const timer = setInterval(function() {
       left -= 1;
-      if (span) span.textContent = Math.max(0,left);
-      if (left <= 0){
+      if (span) span.textContent = Math.max(0, left);
+      if (left <= 0) {
         clearInterval(timer);
         btn.disabled = false;
       }
@@ -21,17 +24,44 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 
   // Password toggle functionality
-  var togglePasswordBtn = document.getElementById('toggle-password');
-  var passwordInput = document.getElementById('password');
-  
-  if (togglePasswordBtn && passwordInput) {
-    togglePasswordBtn.addEventListener('click', function() {
-      if (passwordInput.type === 'password') {
-        passwordInput.type = 'text';
-        togglePasswordBtn.textContent = 'Hide';
-      } else {
-        passwordInput.type = 'password';
-        togglePasswordBtn.textContent = 'Show';
+  const passwordInput = document.getElementById('password');
+  const toggleButton = document.getElementById('toggle-password');
+  const eyeIcon = document.getElementById('eye-icon');
+  const eyeOffIcon = document.getElementById('eye-off-icon');
+
+  if (toggleButton && passwordInput && eyeIcon && eyeOffIcon) {
+    // Toggle password visibility
+    const togglePasswordVisibility = () => {
+      const isPassword = passwordInput.type === 'password';
+      
+      // Toggle input type
+      passwordInput.type = isPassword ? 'text' : 'password';
+      
+      // Toggle icon visibility
+      eyeIcon.style.display = isPassword ? 'none' : 'block';
+      eyeOffIcon.style.display = isPassword ? 'block' : 'none';
+      
+      // Update ARIA label
+      const label = isPassword ? 'Hide password' : 'Show password';
+      toggleButton.setAttribute('aria-label', label);
+    };
+
+    // Click handler
+    toggleButton.addEventListener('click', togglePasswordVisibility);
+
+    // Keyboard navigation (Enter/Space)
+    toggleButton.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        togglePasswordVisibility();
+      }
+    });
+
+    // Toggle on/off when input has focus and user presses Alt+Shift+P
+    passwordInput.addEventListener('keydown', function(e) {
+      if (e.altKey && e.shiftKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        togglePasswordVisibility();
       }
     });
   }

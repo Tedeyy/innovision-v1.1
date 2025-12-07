@@ -13,3 +13,17 @@ a.btn{display:inline-block;margin-top:12px;padding:10px 16px;border-radius:10px;
 .nav-right{display:flex;align-items:center;gap:12px}
 .greeting{color:#4a5568}
 .profile .avatar{display:inline-flex;width:32px;height:32px;border-radius:50%;background:#edf2f7;align-items:center;justify-content:center}
+
+/* Hamburger + mobile menu */
+.hamburger{width:32px;height:28px;display:none;flex-direction:column;justify-content:space-between;cursor:pointer}
+.hamburger span{display:block;height:3px;background:#2d3748;border-radius:2px}
+.mobile-menu{position:fixed;top:0;left:0;height:100vh;width:280px;background:#ffffff;box-shadow:0 10px 30px rgba(0,0,0,.15);transform:translateX(-100%);transition:transform .25s ease;z-index:10010;padding:16px;display:flex;flex-direction:column;gap:8px}
+.mobile-menu a{padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;color:#2d3748;text-decoration:none}
+.mobile-menu.active{transform:translateX(0)}
+.menu-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:10005}
+.menu-overlay.active{opacity:1;pointer-events:auto}
+
+@media (max-width: 640px){
+  .hamburger{display:flex}
+  .nav-center{display:none !important}
+}

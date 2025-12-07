@@ -30,6 +30,11 @@ $statusLabel = $isVerified ? 'Verified' : 'Under review';
                 <input type="search" name="q" placeholder="Search" />
             </form>
         </div>
+        <div class="hamburger" aria-label="Toggle menu">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
         <div class="nav-center" style="display:flex;gap:16px;align-items:center;">
             <a class="btn" href="pages/interests.php">Interests</a>
             <a class="btn" href="pages/pricewatch.php">Price Watch</a>
@@ -49,6 +54,17 @@ $statusLabel = $isVerified ? 'Verified' : 'Under review';
             </a>
         </div>
     </nav>
+    <!-- Mobile Menu -->
+    <div class="mobile-menu">
+        <a href="pages/interests.php">Interests</a>
+        <a href="pages/pricewatch.php">Price Watch</a>
+        <a href="pages/purchases.php">Purchases</a>
+        <a href="pages/transactions.php">Transactions</a>
+        <a href="pages/userreport.php">User Report</a>
+        <a href="../logout.php">Logout</a>
+        <a href="pages/profile.php">Profile</a>
+    </div>
+    <div class="menu-overlay"></div>
     <div id="notifPane" style="display:none;position:fixed;top:56px;right:16px;width:300px;max-height:50vh;overflow:auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 20px rgba(0,0,0,.08);z-index:10000;">
         <div style="padding:10px 12px;border-bottom:1px solid #f3f4f6;font-weight:600;">Notifications (<span id=\"notifCount\">0</span>)</div>
         <div id="notifList" style="padding:8px 0;">
@@ -76,7 +92,9 @@ $statusLabel = $isVerified ? 'Verified' : 'Under review';
         </div>
         <div id="geoStatus" style="margin-top:8px;color:#4a5568;font-size:14px"></div>
     </div>
+    <script src="/pages/script/notifications.js"></script>
     <script src="script/dashboard.js"></script>
+    <script src="/pages/script/mobile-menu.js"></script>
     <script>
       document.addEventListener('DOMContentLoaded', function(){
         // Map init

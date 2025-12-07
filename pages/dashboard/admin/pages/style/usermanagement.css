@@ -12,3 +12,16 @@ th,td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:left}
 .modal .row{display:flex;gap:8px}
 .modal .label{width:160px;color:#6b7280}
 .modal .doc{margin-top:12px}
+
+@media (max-width:640px){
+  .wrap{max-width:100%;padding:0 8px}
+  .tabs{flex-wrap:wrap;gap:6px}
+  .tabs button{padding:6px 10px;font-size:12px;border-radius:6px}
+  table{font-size:12px;table-layout:fixed;word-wrap:break-word}
+  th,td{padding:6px 8px}
+  .card{padding:12px;border-radius:10px}
+  .actions .btn{padding:5px 8px;font-size:12px;border-radius:6px}
+  .modal .panel{width:min(95vw,560px);padding:12px}
+  .modal .grid{grid-template-columns:1fr}
+  .modal .label{width:auto;font-size:12px}
+}

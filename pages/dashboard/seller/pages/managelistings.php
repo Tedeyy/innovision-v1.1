@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
+require_once __DIR__ . '/../../../common/notify.php';
 
 $firstname = isset($_SESSION['firstname']) && $_SESSION['firstname'] !== '' ? $_SESSION['firstname'] : 'User';
 $sellerId = $_SESSION['user_id'] ?? null;
@@ -91,6 +92,12 @@ if (isset($_POST['action']) && $_POST['action'] === 'start_transaction'){
     if (is_array($lr) && isset($lr['message'])) { $ldetail = $lr['message']; }
     elseif (is_string($lr) && $lr!=='') { $ldetail = $lr; }
     $warning = 'Log insert failed (code '.(string)$ls.'). '.($ldetail?:'');
+  }
+  // Notify buyer that seller initiated a transaction
+  if ($buyerId){
+    $title = 'Transaction Initiated';
+    $msg = 'Seller started a transaction for your interest on listing #'.$listingId;
+    notify_send((int)$buyerId,'buyer',$title,$msg,(int)$listingId,'transaction');
   }
   echo json_encode(['ok'=>true,'data'=>$res[0] ?? null, 'warning'=>$warning]);
   exit;

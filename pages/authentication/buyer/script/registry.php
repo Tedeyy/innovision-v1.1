@@ -156,6 +156,10 @@ curl_close($chAuth);
 if ($authErr) {
     respond(500, 'Auth signup error: ' . $authErr);
 }
+if ($authHttp === 400) {
+    header('Location: ' . (($APP_URL ? rtrim($APP_URL, '/') : '') . '/pages/authentication/buyer/registrationform.html?email_taken=1'));
+    exit;
+}
 if ($authHttp < 200 || $authHttp >= 300) {
     respond($authHttp, 'Auth signup HTTP ' . $authHttp . ': ' . $authRes);
 }

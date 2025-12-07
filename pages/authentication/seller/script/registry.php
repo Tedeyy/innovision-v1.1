@@ -158,6 +158,11 @@ curl_close($chAuth);
 if ($authErr) {
     respond(500, 'Auth signup error: ' . $authErr);
 }
+if ($authHttp === 400) {
+    // Redirect back to form with an email_taken flag for frontend message
+    header('Location: ' . (($APP_URL ? rtrim($APP_URL, '/') : '') . '/pages/authentication/seller/registrationform.html?email_taken=1'));
+    exit;
+}
 if ($authHttp < 200 || $authHttp >= 300) {
     respond($authHttp, 'Auth signup HTTP ' . $authHttp . ': ' . $authRes);
 }

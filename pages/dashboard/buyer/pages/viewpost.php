@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
 require_once __DIR__ . '/../../../authentication/lib/use_case_logger.php';
+require_once __DIR__ . '/../../../common/notify.php';
 
 function safe($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
@@ -13,6 +14,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['action']) && $_POST['ac
   $listing_id = isset($_POST['listing_id']) ? (int)$_POST['listing_id'] : 0;
   $message = isset($_POST['message']) ? trim((string)$_POST['message']) : '';
   if (!$buyer_id || $role!=='buyer' || !$listing_id){ echo json_encode(['ok'=>false]); exit; }
+  // Load listing to determine seller recipient
+  [$lrows,$lst,$lerr] = sb_rest('GET','activelivestocklisting',[ 'select'=>'listing_id,seller_id,livestock_type,breed,price', 'listing_id'=>'eq.'.$listing_id, 'limit'=>1 ]);
+  $listingRow = ($lst>=200 && $lst<300 && is_array($lrows) && isset($lrows[0])) ? $lrows[0] : null;
+  $seller_id = $listingRow ? (int)($listingRow['seller_id'] ?? 0) : 0;
   // prevent duplicates
   [$ex,$exs,$exe] = sb_rest('GET','listinginterest',[ 'select'=>'interest_id','buyer_id'=>'eq.'.$buyer_id,'listing_id'=>'eq.'.$listing_id,'limit'=>1 ]);
   if ($exs>=200 && $exs<300 && is_array($ex) && isset($ex[0])){ echo json_encode(['ok'=>true,'dup'=>true]); exit; }
@@ -23,13 +28,19 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['action']) && $_POST['ac
   // Log use case: Buyer initiated transaction interest
   $purpose = format_use_case_description('Transaction Interest Initiated', [
     'listing_id' => $listing_id,
-    'seller_id' => $r['seller_id'] ?? null,
-    'livestock_type' => $r['livestock_type'] ?? '',
-    'breed' => $r['breed'] ?? '',
-    'price' => $r['price'] ?? '',
+    'seller_id' => $seller_id ?: null,
+    'livestock_type' => ($listingRow['livestock_type'] ?? ''),
+    'breed' => ($listingRow['breed'] ?? ''),
+    'price' => ($listingRow['price'] ?? ''),
     'message_length' => strlen($message)
   ]);
   log_use_case($purpose);
+  // Notify seller via in-app (and SMS if verified)
+  if ($seller_id){
+    $title = 'New Interest on Listing #'.$listing_id;
+    $msg = 'A buyer showed interest'.($message? (': "'.substr($message,0,120).'"') : '.');
+    notify_send($seller_id,'seller',$title,$msg,$listing_id,'interest');
+  }
   
   echo json_encode(['ok'=>true]);
   exit;

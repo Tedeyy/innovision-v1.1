@@ -1,0 +1,133 @@
+/* Buyer Profile Styles */
+
+/* Contact Verification Styles */
+.contact-verification {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.contact-verification input[type="text"] {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.verification-status {
+  display: none;
+  color: #28a745;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.verification-status.verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.verification-status i {
+  font-size: 16px;
+}
+
+.verification-message {
+  font-size: 0.85em;
+  margin-top: 5px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  display: none;
+}
+
+.verification-message.error {
+  color: #dc3545;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+}
+
+.verification-message.success {
+  color: #155724;
+  background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+}
+
+.verification-message.info {
+  color: #0c5460;
+  background-color: #d1ecf1;
+  border: 1px solid #bee5eb;
+}
+
+/* Modal Styles */
+#verificationModal .modal-body {
+  text-align: center;
+  padding: 25px;
+}
+
+#verificationModal .otp-input {
+  letter-spacing: 10px;
+  font-size: 24px;
+  text-align: center;
+  width: 100%;
+  margin: 20px 0;
+  padding: 10px;
+  border: 2px solid #dee2e6;
+  border-radius: 4px;
+}
+
+#verificationModal .countdown {
+  font-size: 0.9em;
+  color: #6c757d;
+  margin: 10px 0 20px;
+}
+
+#verificationModal .resend-otp {
+  margin: 15px 0 5px;
+}
+
+#verificationModal .resend-otp a {
+  color: #007bff;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+#verificationModal .resend-otp a:hover {
+  text-decoration: underline;
+}
+
+/* Button Styles */
+.btn-verify {
+  min-width: 100px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.btn-verify i {
+  font-size: 14px;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 576px) {
+  .contact-verification {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .contact-verification input[type="text"] {
+    width: 100%;
+  }
+  
+  .verification-status {
+    margin-top: 5px;
+  }
+  
+  #verificationModal .otp-input {
+    font-size: 20px;
+    letter-spacing: 5px;
+    padding: 8px;
+  }
+}

@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
+require_once __DIR__ . '/../../../common/notify.php';
 header('Content-Type: application/json');
 
 if (($_SESSION['role'] ?? '') !== 'superadmin') { echo json_encode(['ok'=>false,'error'=>'Unauthorized']); exit; }
@@ -48,6 +49,12 @@ if ($action === 'approve') {
   ]], ['Prefer: return=minimal']);
   // Delete from pending
   sb_rest('DELETE','pendingmarketpricing',[ 'pricing_id'=>'eq.'.$pricing_id ], null, ['Prefer: return=minimal']);
+  // Notify admin who submitted the request
+  if (!empty($it['admin_id'])){
+    $title = 'Price Request Approved';
+    $msg = 'Your price change request has been approved.';
+    notify_send((int)$it['admin_id'],'admin',$title,$msg,(int)$pricing_id,'price');
+  }
   echo json_encode(['ok'=>true]);
   exit;
 }

@@ -1,4 +1,4 @@
-<?php
+yes<?php
 session_start();
 
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
@@ -88,21 +88,42 @@ if ($userId) {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Buyer Profile</title>
+  <!-- External CSS -->
   <link rel="stylesheet" href="style/profile.css" />
+  <link rel="stylesheet" href="../../style/profile.css" />
+  <!-- Add Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <!-- Add Bootstrap CSS for modal -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head><body>
-  <div class="container">
+  <!-- Add jQuery and Bootstrap JS -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <div class="container" data-user-id="<?php echo $userId; ?>">
     <div class="card">
       <div class="notice">hello <?php echo htmlspecialchars($firstname, ENT_QUOTES, 'UTF-8'); ?></div>
       <?php if (!empty($success)): ?><div class="success"><?php echo htmlspecialchars($success); ?></div><?php endif; ?>
       <?php if (!empty($error)): ?><div class="error"><?php echo htmlspecialchars($error); ?></div><?php endif; ?>
       <?php if (!empty($notice)): ?><div class="notice"><?php echo htmlspecialchars($notice); ?></div><?php endif; ?>
-      <form method="post">
+      <form method="post" id="profileForm">
         <div class="field"><label>User ID</label><input type="text" value="<?php echo htmlspecialchars($data['user_id']); ?>" readonly /></div>
         <div class="field"><label>First name</label><input type="text" value="<?php echo htmlspecialchars($data['user_fname']); ?>" readonly /></div>
         <div class="field"><label>Middle name</label><input type="text" value="<?php echo htmlspecialchars($data['user_mname']); ?>" readonly /></div>
         <div class="field"><label>Last name</label><input type="text" value="<?php echo htmlspecialchars($data['user_lname']); ?>" readonly /></div>
         <div class="field"><label>Birth date</label><input type="text" value="<?php echo htmlspecialchars($data['bdate']); ?>" readonly /></div>
-        <div class="field"><label>Contact</label><input name="contact" type="text" value="<?php echo htmlspecialchars($data['contact']); ?>" /></div>
+        <div class="field">
+          <label>Contact</label>
+          <div class="contact-verification">
+            <input type="text" name="contact" id="contact" value="<?php echo htmlspecialchars($data['contact']); ?>" maxlength="11" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 11)" <?php echo !empty($data['contact_verified_at']) ? 'readonly' : ''; ?> />
+            <?php if (empty($data['contact_verified_at'])): ?>
+              <button type="button" id="verifyBtn" class="btn btn-primary btn-sm">Verify</button>
+            <?php else: ?>
+              <span class="verification-status verified"><i class="fas fa-check-circle"></i> Verified</span>
+            <?php endif; ?>
+          </div>
+          <div id="contactMessage" class="verification-message"></div>
+        </div>
         <div class="field"><label>Address</label><input name="address" type="text" value="<?php echo htmlspecialchars($data['address']); ?>" /></div>
         <div class="field"><label>Barangay</label><input name="barangay" type="text" value="<?php echo htmlspecialchars($data['barangay']); ?>" /></div>
         <div class="field"><label>Municipality</label><input name="municipality" type="text" value="<?php echo htmlspecialchars($data['municipality']); ?>" /></div>
@@ -111,7 +132,7 @@ if ($userId) {
         <div class="field">
           <label>User Rating</label>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <span style="font-size: 24px; font-weight: bold; color: #f59e0b;"><?php echo $ratingData['average']; ?> ⭐</span>
+            <span style="font-size: 24px; font-weight: bold; color: #f59e0b;"><?php echo $ratingData['average']; ?> </span>
             <span style="color: #6b7280;">(<?php echo $ratingData['count']; ?> rating<?php echo $ratingData['count'] !== 1 ? 's' : ''; ?>)</span>
           </div>
         </div>
@@ -123,21 +144,55 @@ if ($userId) {
       </form>
     </div>
   </div>
-<script>
+
+  <!-- Verification Modal -->
+  <div class="modal fade" id="verificationModal" tabindex="-1" aria-labelledby="verificationModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="verificationModalLabel">Verify Contact Number</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p>We've sent a 6-digit verification code to <strong id="contactNumberDisplay"></strong></p>
+          <input type="text" id="otp" class="form-control otp-input" maxlength="6" placeholder="000000" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 6)">
+          <div id="countdown" class="countdown">Code expires in: <span id="time">05:00</span></div>
+          <div id="otpMessage" class="verification-message"></div>
+          <div class="resend-otp">
+            <p>Didn't receive the code? <a href="#" id="resendOtp">Resend code</a></p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-primary" id="submitOtpBtn">Verify</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- External JavaScript -->
+  <script src="../../script/contact-verification.js"></script>
+</body>
+</html>
   (function(){
     var btn = document.getElementById('btn-reset');
     if (!btn) return;
-    btn.addEventListener('click', async function(){
-      try{
-        var emailInput = document.querySelector('input[type="email"]');
-        var email = emailInput ? emailInput.value : '';
-        if (!email){ alert('No email found for this account.'); return; }
-        const res = await fetch('../../../authentication/reset_password_request.php', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email }) });
-        const data = await res.json();
-        if (!data.ok) { alert(data.error || 'Failed to send reset email'); return; }
-        alert('Password reset email sent. Please check your inbox.');
-      }catch(e){ alert('Network error'); }
+    btn.addEventListener('click', function(){
+      var base = '../../../authentication/reset_password.php?mode=direct&redirect=' + encodeURIComponent(window.location.href.split('#')[0]);
+      window.location.href = base;
     });
   })();
  </script>
 </body></html>
+
+<script>
+  (function(){
+    var p = new URLSearchParams(window.location.search);
+    if (p.get('msg') === 'password_changed') {
+      alert('Password has been changed successfully.');
+      p.delete('msg');
+      var url = window.location.pathname + (p.toString()?('?'+p.toString()):'');
+      window.history.replaceState({}, '', url);
+    }
+  })();
+</script>
