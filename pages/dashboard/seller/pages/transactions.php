@@ -555,6 +555,21 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
       
       $tx['meetup_location'] = $tx['transaction_location'] ?? null;
       
+      // Flag if a meetup_request already exists for this transaction (for this seller)
+    $txIdLocal = isset($tx['transaction_id']) ? (int)$tx['transaction_id'] : 0;
+    $tx['has_meetup_request'] = false;
+    if ($txIdLocal > 0) {
+      [$mrRows,$mrSt,$mrErr] = sb_rest('GET','meetup_request',[
+        'select'        => 'request_id',
+        'transaction_id'=> 'eq.'.$txIdLocal,
+        'user_id'       => 'eq.'.$userId,
+        'user_role'     => 'eq.Seller',
+        'limit'         => 1
+      ]);
+      if ($mrSt>=200 && $mrSt<300 && is_array($mrRows) && !empty($mrRows)){
+        $tx['has_meetup_request'] = true;
+      }
+    }
       // Add BAT fullname
       if (isset($tx['bat'])) {
         $bat = $tx['bat'];
@@ -1170,7 +1185,7 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
             '</div>'+
             meetupInfo+
             '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">'+
-              '<button class="btn" id="btnSuggestMeetup">Suggest Meet-Up</button>'+ 
+              '<button class="btn" id="btnSuggestMeetup"'+(hasMeetupReq?' disabled style="opacity:.6;cursor:not-allowed;"':'')+'>'+(hasMeetupReq?'Meet-Up Suggested':'Suggest Meet-Up')+'</button>'+ 
               '<button class="btn" id="btnSetMeetup">Set Meet-Up</button>'+ 
               '<button class="btn" id="btnConfirmShow">Confirm Attendance</button>'+ 
               '<button class="btn" id="btnRateBuyer">Rate Buyer</button>'+ 

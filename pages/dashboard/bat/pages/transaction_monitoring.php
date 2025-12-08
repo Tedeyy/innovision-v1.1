@@ -228,9 +228,31 @@ function fetch_table($table, $select, $order){
   ];
 }
 
-$start = fetch_table('starttransactions','transaction_id,listing_id,seller_id,buyer_id,status,started_at','started_at.desc');
-$ongo  = fetch_table('ongoingtransactions','transaction_id,listing_id,seller_id,buyer_id,status,started_at,transaction_date,transaction_location,bat_id,bat:bat(user_id,user_fname,user_mname,user_lname)','started_at.desc');
-$done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_id,buyer_id,status,started_at,transaction_date,transaction_location,completed_transaction,bat_id,bat:bat(user_id,user_fname,user_mname,user_lname)','completed_transaction.desc');
+$start = fetch_table(
+  'starttransactions',
+  'transaction_id,listing_id,seller_id,buyer_id,status,started_at,'.
+  'seller:seller(user_id,user_fname,user_mname,user_lname),' .
+  'buyer:buyer(user_id,user_fname,user_mname,user_lname)',
+  'started_at.desc'
+);
+$ongo  = fetch_table(
+  'ongoingtransactions',
+  'transaction_id,listing_id,seller_id,buyer_id,status,started_at,transaction_date,transaction_location,bat_id,' .
+  'bat:bat(user_id,user_fname,user_mname,user_lname),' .
+  'seller:seller(user_id,user_fname,user_mname,user_lname),' .
+  'buyer:buyer(user_id,user_fname,user_mname,user_lname)',
+  'started_at.desc'
+);
+// First, get completed transactions
+$done = fetch_table(
+  'completedtransactions',
+  'transaction_id,listing_id,seller_id,buyer_id,status,started_at,transaction_date,transaction_location,completed_transaction,bat_id,' .
+  'bat:bat(user_id,user_fname,user_mname,user_lname),' .
+  'seller:seller(user_id,user_fname,user_mname,user_lname),' .
+  'buyer:buyer(user_id,user_fname,user_mname,user_lname),' .
+  'successfultransactions(price,payment_method)',
+  'completed_transaction.desc'
+);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -282,12 +304,10 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
       <table class="table">
         <thead>
           <tr>
-            <th>Tx ID</th>
-            <th>Listing ID</th>
-            <th>Seller ID</th>
-            <th>Buyer ID</th>
+            <th>Seller</th>
+            <th>Buyer</th>
             <th>Status</th>
-            <th>Started</th>
+            <th>Timestamp</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -295,14 +315,17 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
           <?php $startRows = $start['rows'] ?? []; ?>
           <?php if (count($startRows)===0): ?>
             <tr><td colspan="7" style="color:#4a5568;">No started transactions.</td></tr>
-          <?php else: foreach ($startRows as $r): ?>
+          <?php else: foreach ($startRows as $r): 
+            $s = $r['seller'] ?? null;
+            $b = $r['buyer'] ?? null;
+            $sellerName = $s ? trim(($s['user_fname']??'').' '.(($s['user_mname']??'')?($s['user_mname'].' '):'').($s['user_lname']??'')) : ($r['seller_id'] ?? '');
+            $buyerName  = $b ? trim(($b['user_fname']??'').' '.(($b['user_mname']??'')?($b['user_mname'].' '):'').($b['user_lname']??'')) : ($r['buyer_id'] ?? '');
+          ?>
             <tr>
-              <td><?php echo esc($r['transaction_id'] ?? ''); ?></td>
-              <td><?php echo esc($r['listing_id'] ?? ''); ?></td>
-              <td><?php echo esc($r['seller_id'] ?? ''); ?></td>
-              <td><?php echo esc($r['buyer_id'] ?? ''); ?></td>
+              <td><?php echo esc($sellerName); ?></td>
+              <td><?php echo esc($buyerName); ?></td>
               <td><?php echo esc($r['status'] ?? ''); ?></td>
-              <td><?php echo esc($r['started_at'] ?? ''); ?></td>
+              <td><?php echo esc(($r['started_at'] ?? '') ? date('H/i d/m/Y', strtotime($r['started_at'])) : ''); ?></td>
               <td><button class="btn btn-show" data-row="<?php echo esc(json_encode($r)); ?>">Show</button></td>
             </tr>
           <?php endforeach; endif; ?>
@@ -318,13 +341,11 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
       <table class="table">
         <thead>
           <tr>
-            <th>Tx ID</th>
-            <th>Listing ID</th>
-            <th>Seller ID</th>
-            <th>Buyer ID</th>
+            <th>Seller</th>
+            <th>Buyer</th>
             <th>Status</th>
-            <th>Started</th>
-            <th>BAT ID</th>
+            <th>Timestamp</th>
+            <th>BAT Name</th>
             <th>Meet-up Date</th>
             <th>Location</th>
             <th>Actions</th>
@@ -334,16 +355,22 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
           <?php $ongoRows = $ongo['rows'] ?? []; ?>
           <?php if (count($ongoRows)===0): ?>
             <tr><td colspan="10" style="color:#4a5568;">No ongoing transactions.</td></tr>
-          <?php else: foreach ($ongoRows as $r): $loc = $r['transaction_location'] ?? ($r['Transaction_location'] ?? ''); ?>
+          <?php else: foreach ($ongoRows as $r): 
+            $loc = $r['transaction_location'] ?? ($r['Transaction_location'] ?? '');
+            $s = $r['seller'] ?? null;
+            $b = $r['buyer'] ?? null;
+            $batRow = $r['bat'] ?? null;
+            $sellerName = $s ? trim(($s['user_fname']??'').' '.(($s['user_mname']??'')?($s['user_mname'].' '):'').($s['user_lname']??'')) : ($r['seller_id'] ?? '');
+            $buyerName  = $b ? trim(($b['user_fname']??'').' '.(($b['user_mname']??'')?($b['user_mname'].' '):'').($b['user_lname']??'')) : ($r['buyer_id'] ?? '');
+            $batName    = $batRow ? trim(($batRow['user_fname']??'').' '.(($batRow['user_mname']??'')?($batRow['user_mname'].' '):'').($batRow['user_lname']??'')) : ($r['bat_id'] ?? $r['Bat_id'] ?? '');
+          ?>
             <tr>
-              <td><?php echo esc($r['transaction_id'] ?? ''); ?></td>
-              <td><?php echo esc($r['listing_id'] ?? ''); ?></td>
-              <td><?php echo esc($r['seller_id'] ?? ''); ?></td>
-              <td><?php echo esc($r['buyer_id'] ?? ''); ?></td>
+              <td><?php echo esc($sellerName); ?></td>
+              <td><?php echo esc($buyerName); ?></td>
               <td><?php echo esc($r['status'] ?? ''); ?></td>
-              <td><?php echo esc($r['started_at'] ?? ''); ?></td>
-              <td><?php echo esc($r['bat_id'] ?? $r['Bat_id'] ?? ''); ?></td>
-              <td><?php echo esc($r['transaction_date'] ?? ''); ?></td>
+              <td><?php echo esc(($r['started_at'] ?? '') ? date('H/i d/m/Y', strtotime($r['started_at'])) : ''); ?></td>
+              <td><?php echo esc($batName); ?></td>
+              <td><?php echo esc(($r['transaction_date'] ?? '') ? date('H/i d/m/Y', strtotime($r['transaction_date'])) : ''); ?></td>
               <td><?php echo esc($loc); ?></td>
               <td><button class="btn btn-show" data-row="<?php echo esc(json_encode($r)); ?>">Show</button></td>
             </tr>
@@ -360,13 +387,11 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
       <table class="table">
         <thead>
           <tr>
-            <th>Tx ID</th>
-            <th>Listing ID</th>
-            <th>Seller ID</th>
-            <th>Buyer ID</th>
+            <th>Seller</th>
+            <th>Buyer</th>
             <th>Status</th>
-            <th>Started</th>
-            <th>BAT ID</th>
+            <th>Timestamp</th>
+            <th>BAT Name</th>
             <th>Meet-up Date</th>
             <th>Location</th>
             <th>Completed</th>
@@ -377,18 +402,23 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
           <?php $doneRows = $done['rows'] ?? []; ?>
           <?php if (count($doneRows)===0): ?>
             <tr><td colspan="11" style="color:#4a5568;">No completed transactions.</td></tr>
-          <?php else: foreach ($doneRows as $r): ?>
+          <?php else: foreach ($doneRows as $r): 
+            $s = $r['seller'] ?? null;
+            $b = $r['buyer'] ?? null;
+            $batRow = $r['bat'] ?? null;
+            $sellerName = $s ? trim(($s['user_fname']??'').' '.(($s['user_mname']??'')?($s['user_mname'].' '):'').($s['user_lname']??'')) : ($r['seller_id'] ?? '');
+            $buyerName  = $b ? trim(($b['user_fname']??'').' '.(($b['user_mname']??'')?($b['user_mname'].' '):'').($b['user_lname']??'')) : ($r['buyer_id'] ?? '');
+            $batName    = $batRow ? trim(($batRow['user_fname']??'').' '.(($batRow['user_mname']??'')?($batRow['user_mname'].' '):'').($batRow['user_lname']??'')) : ($r['bat_id'] ?? '');
+          ?>
             <tr>
-              <td><?php echo esc($r['transaction_id'] ?? ''); ?></td>
-              <td><?php echo esc($r['listing_id'] ?? ''); ?></td>
-              <td><?php echo esc($r['seller_id'] ?? ''); ?></td>
-              <td><?php echo esc($r['buyer_id'] ?? ''); ?></td>
+              <td><?php echo esc($sellerName); ?></td>
+              <td><?php echo esc($buyerName); ?></td>
               <td><?php echo esc($r['status'] ?? ''); ?></td>
-              <td><?php echo esc($r['started_at'] ?? ''); ?></td>
-              <td><?php echo esc($r['bat_id'] ?? ''); ?></td>
-              <td><?php echo esc($r['transaction_date'] ?? ''); ?></td>
+              <td><?php echo esc(($r['started_at'] ?? '') ? date('H/i d/m/Y', strtotime($r['started_at'])) : ''); ?></td>
+              <td><?php echo esc($batName); ?></td>
+              <td><?php echo esc(($r['transaction_date'] ?? '') ? date('H/i d/m/Y', strtotime($r['transaction_date'])) : ''); ?></td>
               <td><?php echo esc($r['transaction_location'] ?? ''); ?></td>
-              <td><?php echo esc($r['completed_transaction'] ?? ''); ?></td>
+              <td><?php echo esc(($r['completed_transaction'] ?? '') ? date('H/i d/m/Y', strtotime($r['completed_transaction'])) : ''); ?></td>
               <td><button class="btn btn-show" data-row="<?php echo esc(json_encode($r)); ?>">Show</button></td>
             </tr>
           <?php endforeach; endif; ?>
@@ -442,15 +472,29 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
               var thumb  = info && info.thumb  ? info.thumb  : '';
               var thumb_fallback = info && info.thumb_fallback ? info.thumb_fallback : '';
               function fullname(p){ var f=p.user_fname||'', m=p.user_mname||'', l=p.user_lname||''; return (f+' '+(m?m+' ':'')+l).trim(); }
+              // Check if this is a successful transaction
+              var successTx = data.successfultransactions && data.successfultransactions[0];
+              var priceHtml = 'Price: ₱' + (listing.price || '0.00');
+              var finalPriceHtml = '';
+              
+              if (successTx && successTx.price > 0) {
+                priceHtml = 'List Price: ₱' + (listing.price || '0.00');
+                finalPriceHtml = '<div style="font-weight:600;color:#10b981;margin-top:4px;">Final Price: ₱' + 
+                                parseFloat(successTx.price).toFixed(2) + 
+                                (successTx.payment_method ? ' (' + successTx.payment_method.charAt(0).toUpperCase() + 
+                                successTx.payment_method.slice(1) + ')' : '') + '</div>';
+              }
+
               var bodyHtml = ''+
                 '<div class="card" style="padding:12px;">'+
                   '<div style="display:flex;gap:12px;align-items:flex-start;">'+
-                    '<img src="'+thumb+'" onerror="if(this.src!==\''+thumb_fallback+'\')this.src=\''+thumb_fallback+'\'; else this.style.display=\'none\';" style="width:120px;height:120px;object-fit:cover;border:1px solid #e2e8f0;border-radius:8px;" />'+
+                    '<img src="'+thumb+'" onerror="if(this.src!=\''+thumb_fallback+'\')this.src=\''+thumb_fallback+'\'; else this.style.display=\'none\';" style="width:120px;height:120px;object-fit:cover;border:1px solid #e2e8f0;border-radius:8px;" />'+
                     '<div style="flex:1;">'+
                       '<div style="font-weight:600;margin-bottom:6px;">'+(listing.livestock_type||'')+' • '+(listing.breed||'')+'</div>'+
-                      '<div>Price: ₱'+(listing.price||'')+'</div>'+
-                      '<div>Address: '+(listing.address||'')+'</div>'+
-                      '<div class="subtle">Listing #'+(listing.listing_id||'')+' • '+(listing.created||'')+'</div>'+
+                      '<div>'+priceHtml+'</div>'+
+                      finalPriceHtml +
+                      '<div style="margin-top:4px;">Address: '+(listing.address||'')+'</div>'+
+                      '<div class="subtle" style="margin-top:4px;">Listing #'+(listing.listing_id||'')+' • '+(listing.created||'')+'</div>'+
                     '</div>'+
                   '</div>'+
                   '<hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0" />'+
@@ -465,7 +509,29 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
                       '<div><strong>Date & Time:</strong> '+(whenVal||'')+'</div>'+
                       '<div><strong>Location:</strong> '+(locVal||'')+'</div>'+
                     '</div>'+
-                    '<div id="txMap" style="height:260px;border:1px solid #e2e8f0;border-radius:8px;"></div>'+
+                    '<div id="txMap" style="height:260px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:12px;"></div>'+
+                    (successTx && successTx.price > 0 ? 
+                      '<div style="margin-top:16px;padding-top:16px;border-top:1px solid #e2e8f0;">'+
+                        '<h3 style="margin:0 0 12px 0;font-size:16px;color:#2d3748;">Completed Transaction Information</h3>'+
+                        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#f7fafc;padding:12px;border-radius:8px;border:1px solid #e2e8f0;">'+
+                          '<div>'+
+                            '<div style="font-size:13px;color:#718096;margin-bottom:4px;">List Price</div>'+
+                            '<div style="font-size:15px;font-weight:500;">₱'+(listing.price ? parseFloat(listing.price).toFixed(2) : '0.00')+'</div>'+
+                          '</div>'+
+                          '<div>'+
+                            '<div style="font-size:13px;color:#718096;margin-bottom:4px;">Final Price</div>'+
+                            '<div style="font-size:15px;font-weight:600;color:#10b981;">₱'+parseFloat(successTx.price).toFixed(2)+'</div>'+
+                          '</div>'+
+                          '<div>'+
+                            '<div style="font-size:13px;color:#718096;margin-bottom:4px;">Payment Method</div>'+
+                            '<div style="font-size:15px;font-weight:500;">'+(successTx.payment_method ? successTx.payment_method.charAt(0).toUpperCase() + successTx.payment_method.slice(1) : 'N/A')+'</div>'+
+                          '</div>'+
+                          '<div>'+
+                            '<div style="font-size:13px;color:#718096;margin-bottom:4px;">Status</div>'+
+                            '<div style="display:inline-block;background:#e6f7ee;color:#10b981;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:500;">Completed Successfully</div>'+
+                          '</div>'+
+                        '</div>'+
+                      '</div>' : '')+
                   '</div>'
                 ) : (
                   '<div class="card" style="padding:12px;margin-top:10px;">'+
@@ -617,29 +683,39 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
         <h2 style="margin:0;">Complete Transaction</h2>
         <button class="close-btn" data-close="batCompleteModal">Close</button>
       </div>
-      <form id="batCompleteForm" style="margin-top:8px;display:grid;gap:10px;">
+      <form id="batCompleteForm" style="margin-top:8px;">
         <input type="hidden" name="transaction_id" />
         <input type="hidden" name="listing_id" />
         <input type="hidden" name="seller_id" />
         <input type="hidden" name="buyer_id" />
-        <div>
-          <label style="font-weight:600;">Result</label>
-          <div style="margin-top:6px;">
-            <label style="margin-right:12px;"><input type="radio" name="result" value="successful" checked /> Successful</label>
-            <label><input type="radio" name="result" value="failed" /> Failed</label>
+        <input type="hidden" name="payment_method" id="paymentMethodHidden" />
+        <div class="card" style="padding:12px;display:grid;gap:10px;">
+          <div>
+            <label style="font-weight:600;">Result</label>
+            <div style="margin-top:6px;">
+              <label style="margin-right:12px;"><input type="radio" name="result" value="successful" checked /> Successful</label>
+              <label><input type="radio" name="result" value="failed" /> Failed</label>
+            </div>
           </div>
-        </div>
-        <div>
-          <label style="font-weight:600;">Final Price (₱)</label>
-          <input type="number" name="price" step="0.01" min="0" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
-        </div>
-        <div>
-          <label style="font-weight:600;">Payment Method</label>
-          <input type="text" name="payment_method" placeholder="e.g. Cash" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button type="button" class="btn" id="batCompleteSubmit">Submit</button>
-          <span id="batCompleteMsg" class="subtle"></span>
+          <div>
+            <label style="font-weight:600;">Final Price (₱)</label>
+            <input type="number" name="price" step="0.01" min="0" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
+          </div>
+          <div>
+            <label style="font-weight:600;">Payment Method</label>
+            <div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">
+              <select id="paymentMethodSelect" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;">
+                <option value="Cash">Cash</option>
+                <option value="GCash">GCash</option>
+                <option value="other">Other payment method</option>
+              </select>
+              <input type="text" id="paymentMethodOther" placeholder="Specify other payment method" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;display:none;" />
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button type="button" class="btn" id="batCompleteSubmit">Submit</button>
+            <span id="batCompleteMsg" class="subtle"></span>
+          </div>
         </div>
       </form>
     </div>
@@ -649,18 +725,41 @@ $done  = fetch_table('completedtransactions','transaction_id,listing_id,seller_i
       var form = document.getElementById('batCompleteForm');
       var submitBtn = document.getElementById('batCompleteSubmit');
       var msg = document.getElementById('batCompleteMsg');
+      var methodSelect = document.getElementById('paymentMethodSelect');
+      var methodOther = document.getElementById('paymentMethodOther');
+      var methodHidden = document.getElementById('paymentMethodHidden');
+
+      if (methodSelect && methodOther){
+        methodSelect.addEventListener('change', function(){
+          if (methodSelect.value === 'other'){
+            methodOther.style.display = '';
+          } else {
+            methodOther.style.display = 'none';
+            methodOther.value = '';
+          }
+        });
+      }
+
       if (submitBtn && form){
         submitBtn.addEventListener('click', function(){
           msg.textContent = '';
-          var fd = new FormData(form);
-          var result = (fd.get('result')||'').toString();
-          var price = parseFloat(fd.get('price')||'0');
-          var pay = (fd.get('payment_method')||'').toString().trim();
+          var result = (form.querySelector('input[name="result"]:checked') || {}).value || '';
+          var priceInput = form.querySelector('input[name="price"]');
+          var price = priceInput ? parseFloat(priceInput.value || '0') : 0;
+          var methodVal = methodSelect ? methodSelect.value : '';
+          var pay = '';
+          if (methodVal === 'other'){
+            pay = methodOther ? methodOther.value.toString().trim() : '';
+          } else {
+            pay = methodVal || '';
+          }
           if (result==='successful' && (isNaN(price) || price<=0 || pay==='')){
             msg.textContent = 'Please provide price and payment method for successful transactions.';
             msg.style.color = '#e53e3e';
             return;
           }
+          if (methodHidden){ methodHidden.value = pay; }
+          var fd = new FormData(form);
           fd.append('action','complete_transaction');
           submitBtn.disabled = true; submitBtn.textContent = 'Submitting...';
           fetch('transaction_monitoring.php', { method:'POST', body: fd, credentials:'same-origin' })
