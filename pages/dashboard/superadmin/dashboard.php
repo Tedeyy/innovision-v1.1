@@ -51,9 +51,6 @@ $soldRows = ($soldStatus>=200 && $soldStatus<300 && is_array($soldRes)) ? $soldR
     <nav class="navbar">
         <div class="nav-left">
             <div class="brand">Dashboard</div>
-            <form class="search" method="get" action="#">
-                <input type="search" name="q" placeholder="Search" />
-            </form>
         </div>
         <div class="hamburger" aria-label="Toggle menu">
             <span></span>
@@ -155,7 +152,7 @@ $soldRows = ($soldStatus>=200 && $soldStatus<300 && is_array($soldRes)) ? $soldR
     var countEl = document.getElementById('notifCount');
     function render(list){
       var n = Array.isArray(list) ? list.length : 0;
-      if (badge){ badge.textContent = String(n); badge.style.display = n>0 ? 'inline-block' : 'none'; }
+      // Count label inside pane (total items)
       if (countEl){ countEl.textContent = String(n); }
       if (!listEl) return;
       listEl.innerHTML = '';
@@ -169,14 +166,17 @@ $soldRows = ($soldStatus>=200 && $soldStatus<300 && is_array($soldRes)) ? $soldR
       list.forEach(function(item){
         var row = document.createElement('div');
         row.style.cssText = 'padding:10px 12px;border-bottom:1px solid #f3f4f6;';
-        row.textContent = item && item.text ? item.text : String(item);
+        var title = item && item.title ? item.title : '';
+        var msg = item && item.message ? item.message : '';
+        row.textContent = (title ? title+': ' : '') + msg;
         listEl.appendChild(row);
       });
     }
     window.updateNotifications = function(list){ render(list||[]); };
     if (btn){ btn.addEventListener('click', function(e){ e.preventDefault(); if (!pane) return; pane.style.display = (pane.style.display==='none'||pane.style.display==='') ? 'block' : 'none'; }); }
     document.addEventListener('click', function(e){ if (!pane || !btn) return; if (!pane.contains(e.target) && !btn.contains(e.target)) { pane.style.display = 'none'; } });
-    render(window.NOTIFS || []);
+    // Initial state; notifications.js will populate shortly
+    render([]);
   })();
   // Sales chart data + filters
   (function(){

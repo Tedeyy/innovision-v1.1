@@ -61,6 +61,105 @@ if (isset($_POST['action']) && $_POST['action']==='report_user'){
   exit;
 }
 
+// Seller confirms show for an ongoing transaction
+if (isset($_POST['action']) && $_POST['action']==='confirm_show'){
+  header('Content-Type: application/json');
+  $txId       = isset($_POST['transaction_id']) ? (int)$_POST['transaction_id'] : 0;
+  $sellerIdIn = isset($_POST['seller_id']) ? (int)$_POST['seller_id'] : 0;
+  $buyerIdIn  = isset($_POST['buyer_id']) ? (int)$_POST['buyer_id'] : 0;
+  $batIdIn    = isset($_POST['bat_id']) ? (int)$_POST['bat_id'] : null;
+  $decision   = isset($_POST['decision']) ? (string)$_POST['decision'] : 'Confirm';
+  if (!in_array($decision,['Confirm','Reschedule','Waiting'],true)) $decision = 'Confirm';
+
+  if (!$txId || $sellerIdIn!==$userId){
+    echo json_encode(['ok'=>false,'error'=>'invalid_params']);
+    exit;
+  }
+
+  // Check if a confirmation row already exists for this seller + transaction
+  [$rows,$st,$err] = sb_rest('GET','show_confirmation',[
+    'select'=>'confirmation_id',
+    'transaction_id'=>'eq.'.$txId,
+    'seller_id'=>'eq.'.$sellerIdIn,
+    'limit'=>1
+  ]);
+  if (!($st>=200 && $st<300) || !is_array($rows)) $rows = [];
+
+  $now = date('Y-m-d H:i:s');
+
+  if (!empty($rows) && isset($rows[0]['confirmation_id'])){
+    // Update existing row
+    [$uRes,$uSt,$uErr] = sb_rest('PATCH','show_confirmation',[
+      'transaction_id'=>'eq.'.$txId,
+      'seller_id'=>'eq.'.$sellerIdIn
+    ],[
+      'confirm_seller'=>$decision,
+      'confirmed_seller'=>$now
+    ]);
+    if (!($uSt>=200 && $uSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'update_failed','code'=>$uSt]);
+      exit;
+    }
+  } else {
+    // Insert new row
+    $payload = [[
+      'transaction_id'=>$txId,
+      'seller_id'=>$sellerIdIn,
+      'buyer_id'=>$buyerIdIn ?: null,
+      'bat_id'=>$batIdIn,
+      'confirm_seller'=>$decision,
+      'confirmed_seller'=>$now
+    ]];
+    [$iRes,$iSt,$iErr] = sb_rest('POST','show_confirmation',[], $payload, ['Prefer: return=minimal']);
+    if (!($iSt>=200 && $iSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'insert_failed','code'=>$iSt]);
+      exit;
+    }
+  }
+  echo json_encode(['ok'=>true]);
+  exit;
+}
+
+// Seller suggests a meet-up for an ongoing transaction
+if (isset($_POST['action']) && $_POST['action']==='request_meetup'){
+  header('Content-Type: application/json');
+  $txId       = isset($_POST['transaction_id']) ? (int)$_POST['transaction_id'] : 0;
+  $sellerIdIn = isset($_POST['seller_id']) ? (int)$_POST['seller_id'] : 0;
+  $dateIn     = isset($_POST['date']) ? trim((string)$_POST['date']) : '';
+  $timeIn     = isset($_POST['time']) ? trim((string)$_POST['time']) : '';
+  $locationIn = isset($_POST['location']) ? trim((string)$_POST['location']) : '';
+  $descIn     = isset($_POST['description']) ? trim((string)$_POST['description']) : '';
+
+  if (!$txId || $sellerIdIn!==$userId || $dateIn==='' || $timeIn==='' || $locationIn===''){
+    echo json_encode(['ok'=>false,'error'=>'invalid_params']);
+    exit;
+  }
+
+  $dtStr = $dateIn.' '.$timeIn;
+  $ts = strtotime($dtStr);
+  if ($ts===false){
+    echo json_encode(['ok'=>false,'error'=>'invalid_datetime']);
+    exit;
+  }
+  $dtFormatted = date('Y-m-d H:i:s',$ts);
+
+  $payload = [[
+    'transaction_id'=>$txId,
+    'user_id'=>$sellerIdIn,
+    'user_role'=>'Seller',
+    'transaction_date'=>$dtFormatted,
+    'transaction_location'=>$locationIn,
+    'description'=>$descIn
+  ]];
+  [$res,$st,$err] = sb_rest('POST','meetup_request',[], $payload, ['Prefer: return=minimal']);
+  if (!($st>=200 && $st<300)){
+    echo json_encode(['ok'=>false,'error'=>'insert_failed','code'=>$st]);
+    exit;
+  }
+  echo json_encode(['ok'=>true]);
+  exit;
+}
+
 if (isset($_POST['action']) && $_POST['action']==='complete_transaction'){
   header('Content-Type: application/json');
   
@@ -338,6 +437,25 @@ if (isset($_GET['action']) && $_GET['action']==='has_rating'){
   exit;
 }
 
+if (isset($_GET['action']) && $_GET['action']==='has_report'){
+  header('Content-Type: application/json');
+  $buyerIdIn = isset($_GET['buyer_id']) ? (int)$_GET['buyer_id'] : 0;
+  if ($buyerIdIn<=0){
+    echo json_encode(['ok'=>false,'error'=>'missing_params']);
+    exit;
+  }
+  // Has this seller already reported this buyer?
+  [$rows,$status,$error] = sb_rest('GET','reviewreportuser',[
+    'select'=>'report_id',
+    'reporter_id'=>'eq.'.$userId,
+    'reported_id'=>'eq.'.$buyerIdIn,
+    'limit'=>1
+  ]);
+  if (!($status>=200 && $status<300) || !is_array($rows)) $rows = [];
+  echo json_encode(['ok'=>true,'has_report'=>(count($rows)>0)]);
+  exit;
+}
+
 if (isset($_POST['action']) && $_POST['action']==='rate_buyer'){
   header('Content-Type: application/json');
   $txId = isset($_POST['transaction_id']) ? (int)$_POST['transaction_id'] : 0;
@@ -446,27 +564,41 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
       }
     }
   }
-  echo json_encode(['ok'=>true,'data'=>$allTransactions]);
+
+  echo json_encode(['ok'=>true,'items'=>$allTransactions]);
   exit;
 }
 
 // Move Started -> Ongoing and notify buyer
 if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
   header('Content-Type: application/json');
+  $txId     = isset($_POST['transaction_id']) ? (int)$_POST['transaction_id'] : 0;
   $listingId = isset($_POST['listing_id']) ? (int)$_POST['listing_id'] : 0;
   $sellerId = isset($_POST['seller_id']) ? (int)$_POST['seller_id'] : 0;
   $buyerId = isset($_POST['buyer_id']) ? (int)$_POST['buyer_id'] : 0;
   
-  if (!$listingId || !$sellerId || !$buyerId || $sellerId !== $userId){
+  if (!$txId || !$listingId || !$sellerId || !$buyerId || $sellerId !== $userId){
     echo json_encode(['ok'=>false,'error'=>'invalid_params']);
     exit;
   }
   
+  // If an ongoing row already exists for this transaction+seller, treat as success (idempotent)
+  [$ongoRows,$ongoSt,$ongoErr] = sb_rest('GET','ongoingtransactions',[
+    'select'=>'transaction_id',
+    'transaction_id'=>'eq.'.$txId,
+    'seller_id'=>'eq.'.$sellerId,
+    'limit'=>1
+  ]);
+  if ($ongoSt>=200 && $ongoSt<300 && is_array($ongoRows) && !empty($ongoRows)){
+    echo json_encode(['ok'=>true]);
+    exit;
+  }
+
+  // Look up the start transaction by transaction_id and seller
   [$srows,$sst,$sse] = sb_rest('GET','starttransactions',[
     'select'=>'*',
-    'listing_id'=>'eq.'.$listingId,
+    'transaction_id'=>'eq.'.$txId,
     'seller_id'=>'eq.'.$sellerId,
-    'buyer_id'=>'eq.'.$buyerId,
     'limit'=>1
   ]);
   if (!($sst>=200 && $sst<300) || !is_array($srows) || empty($srows)){
@@ -477,22 +609,28 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
 
   [$ores,$ost,$ose] = sb_rest('POST','ongoingtransactions',[],[
     [
+      'transaction_id'=>$transaction['transaction_id'],
       'listing_id'=>$transaction['listing_id'],
       'seller_id'=>$transaction['seller_id'],
       'buyer_id'=>$transaction['buyer_id'],
-      'status'=>'ongoing',
+      'status'=>'Ongoing',
       'started_at'=>$transaction['started_at']
     ]
   ]);
   if (!($ost>=200 && $ost<300)){
-    echo json_encode(['ok'=>false,'error'=>'insert_ongoing_failed','code'=>$ost]);
+    $detail = '';
+    if (is_array($ores) && isset($ores['message'])) {
+      $detail = $ores['message'];
+    } elseif (is_string($ores) && $ores!=='') {
+      $detail = $ores;
+    }
+    echo json_encode(['ok'=>false,'error'=>'insert_ongoing_failed','code'=>$ost,'detail'=>$detail]);
     exit;
   }
 
   [$dres,$dst,$dse] = sb_rest('DELETE','starttransactions',[],[],[
-    'listing_id'=>'eq.'.$listingId,
-    'seller_id'=>'eq.'.$sellerId,
-    'buyer_id'=>'eq.'.$buyerId
+    'transaction_id'=>'eq.'.$txId,
+    'seller_id'=>'eq.'.$sellerId
   ]);
   if (!($dst>=200 && $dst<300)){
     echo json_encode(['ok'=>false,'error'=>'delete_start_failed','code'=>$dst]);
@@ -512,15 +650,21 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
 
 <html lang="en">
 <head>
+  <!-- ... (rest of the code remains the same) -->
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Seller Transactions</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../style/dashboard.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <style>
     .modal{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:9999}
     /* Ensure Report Buyer modal appears above Transaction Details modal */
     #reportBuyerModal{z-index:10001}
+    /* Ensure Rate Buyer modal appears above most */
+    #rateModalSeller{z-index:10002}
+    /* Ensure Confirm Attendance modal appears above all */
+    #confirmShowModal{z-index:10003}
     .panel{background:#fff;border-radius:10px;max-width:900px;width:95vw;max-height:90vh;overflow:auto;padding:16px}
     .subtle{color:#4a5568;font-size:12px}
     .table{width:100%;border-collapse:collapse}
@@ -581,6 +725,7 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
       }
     }
   </style>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
   <div class="wrap">
@@ -657,6 +802,59 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
     </div>
   </div>
 
+  <!-- Confirm Attendance Modal -->
+  <div id="confirmShowModal" class="modal">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <h2 style="margin:0;">Confirm Attendance</h2>
+        <button class="close-btn" data-close="confirmShowModal">Close</button>
+      </div>
+      <div style="margin-top:8px;">
+        <div class="subtle" style="margin-bottom:8px;">Confirm that you will attend the scheduled meet-up, or request a new schedule.</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn" id="btnConfirmShowSubmit">Confirm</button>
+          <button class="btn" id="btnRequestResched">Request Reschedule</button>
+          <span class="subtle" id="confirmShowMsg"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Suggest Meet-Up Modal -->
+  <div id="meetupRequestModal" class="modal">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <h2 style="margin:0;">Suggest Meet-Up</h2>
+        <button class="close-btn" data-close="meetupRequestModal">Close</button>
+      </div>
+      <div style="margin-top:8px;display:grid;gap:8px;">
+        <div style="display:flex;gap:8px;">
+          <div style="flex:1;">
+            <label style="display:block;font-weight:600;margin-bottom:4px;">Date</label>
+            <input type="date" id="mrDate" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
+          </div>
+          <div style="flex:1;">
+            <label style="display:block;font-weight:600;margin-bottom:4px;">Time</label>
+            <input type="time" id="mrTime" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
+          </div>
+        </div>
+        <div>
+          <label style="display:block;font-weight:600;margin-bottom:4px;">Location</label>
+          <input type="text" id="mrLocation" placeholder="Enter meet-up location" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
+        </div>
+        <div id="meetupRequestMap" style="margin-top:4px;width:100%;height:220px;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;"></div>
+        <div>
+          <label style="display:block;font-weight:600;margin-bottom:4px;">Description</label>
+          <textarea id="mrDesc" style="width:100%;min-height:80px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" placeholder="Optional instructions or notes"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn" id="btnSubmitMeetupRequest">Submit Request</button>
+          <span class="subtle" id="meetupRequestMsg"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Transaction Details Modal -->
   <div id="txModal" class="modal">
     <div class="panel">
@@ -703,7 +901,8 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
           .then(function(res){
             var tb = document.querySelector('#txTable tbody');
             tb.innerHTML = '';
-            (res.data||[]).forEach(function(row){
+            var items = Array.isArray(res && res.items) ? res.items : [];
+            items.forEach(function(row){
               var buyer = row.buyer||{}; var listing = row.listing||{};
               var tr = document.createElement('tr');
               tr.innerHTML =
@@ -715,6 +914,224 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
               tb.appendChild(tr);
             });
           });
+      }
+
+      // Confirm Attendance submit
+      var btnConfirmShowSubmit = document.getElementById('btnConfirmShowSubmit');
+      if (btnConfirmShowSubmit){
+        btnConfirmShowSubmit.addEventListener('click', function(){
+          var modal = document.getElementById('confirmShowModal');
+          var msgEl = document.getElementById('confirmShowMsg');
+          if (msgEl) msgEl.textContent = '';
+          if (!modal) return;
+          var txId = modal.getAttribute('data-transaction')||'';
+          var sellerId = modal.getAttribute('data-seller')||'';
+          var buyerId = modal.getAttribute('data-buyer')||'';
+          var batId = modal.getAttribute('data-bat')||'';
+          if (!txId || !sellerId){
+            if (msgEl) msgEl.textContent = 'Missing transaction data.';
+            return;
+          }
+          var fd = new FormData();
+          fd.append('action','confirm_show');
+          fd.append('transaction_id', txId);
+          fd.append('seller_id', sellerId);
+          if (buyerId) fd.append('buyer_id', buyerId);
+          if (batId) fd.append('bat_id', batId);
+          btnConfirmShowSubmit.disabled = true;
+          fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(res){
+              btnConfirmShowSubmit.disabled = false;
+              if (!res || res.ok===false){
+                if (msgEl) msgEl.textContent = 'Failed to confirm.';
+              } else {
+                if (msgEl) msgEl.textContent = 'Confirmed.';
+                closeModal('confirmShowModal');
+                // Disable button in parent modal if present
+                var btn = document.getElementById('btnConfirmShow');
+                if (btn){ btn.disabled = true; btn.textContent = 'Confirmed'; }
+              }
+            })
+            .catch(function(err){
+              btnConfirmShowSubmit.disabled = false;
+              if (msgEl) msgEl.textContent = 'Network error.';
+            });
+        });
+      }
+
+      // Request Reschedule from Confirm Attendance
+      var btnRequestResched = document.getElementById('btnRequestResched');
+      if (btnRequestResched){
+        btnRequestResched.addEventListener('click', function(){
+          var confirmModal = document.getElementById('confirmShowModal');
+          var msgEl = document.getElementById('confirmShowMsg');
+          if (msgEl) msgEl.textContent = '';
+          if (!confirmModal) return;
+          var txId = confirmModal.getAttribute('data-transaction')||'';
+          var sellerId = confirmModal.getAttribute('data-seller')||'';
+          var buyerId = confirmModal.getAttribute('data-buyer')||'';
+          var batId = confirmModal.getAttribute('data-bat')||'';
+          if (!txId || !sellerId) return;
+
+          // First, mark seller confirmation as Reschedule
+          var fd = new FormData();
+          fd.append('action','confirm_show');
+          fd.append('transaction_id', txId);
+          fd.append('seller_id', sellerId);
+          if (buyerId) fd.append('buyer_id', buyerId);
+          if (batId) fd.append('bat_id', batId);
+          fd.append('decision','Reschedule');
+          btnRequestResched.disabled = true;
+          fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(res){
+              btnRequestResched.disabled = false;
+              if (!res || res.ok===false){
+                if (msgEl) msgEl.textContent = 'Failed to mark as reschedule.';
+              } else {
+                // Then open meetup request modal to suggest new schedule
+                var mrModal = document.getElementById('meetupRequestModal');
+                if (mrModal){
+                  mrModal.setAttribute('data-transaction', txId);
+                  mrModal.setAttribute('data-seller', sellerId);
+                  var msg = document.getElementById('meetupRequestMsg'); if (msg) msg.textContent='';
+                  closeModal('confirmShowModal');
+                  openModal('meetupRequestModal');
+                }
+              }
+            })
+            .catch(function(err){
+              btnRequestResched.disabled = false;
+              if (msgEl) msgEl.textContent = 'Network error.';
+            });
+        });
+      }
+
+      // Suggest Meet-Up interactive map + submit
+      var btnSubmitMeetupRequest = document.getElementById('btnSubmitMeetupRequest');
+      if (btnSubmitMeetupRequest){
+        var mrLocation = document.getElementById('mrLocation');
+        var mrMap = document.getElementById('meetupRequestMap');
+        var meetupMapInstance = null;
+        var meetupMarker = null;
+
+        function ensureMeetupMap(){
+          if (!mrMap) return;
+          if (!window.L){
+            // Leaflet not yet loaded; try again shortly
+            setTimeout(ensureMeetupMap, 100);
+            return;
+          }
+          if (!meetupMapInstance){
+            meetupMapInstance = L.map(mrMap).setView([8.314209 , 124.859425], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              maxZoom: 19,
+              attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(meetupMapInstance);
+            meetupMapInstance.on('click', function(ev){
+              var lat = ev.latlng.lat;
+              var lng = ev.latlng.lng;
+              if (mrLocation){
+                mrLocation.value = lat.toFixed(6)+','+lng.toFixed(6);
+              }
+              if (!meetupMarker){
+                meetupMarker = L.marker(ev.latlng).addTo(meetupMapInstance);
+              } else {
+                meetupMarker.setLatLng(ev.latlng);
+              }
+            });
+          } else {
+            setTimeout(function(){ try{ meetupMapInstance.invalidateSize(); }catch(e){} }, 0);
+          }
+
+          // If location already has lat,lng, reflect on map
+          if (mrLocation && mrLocation.value && meetupMapInstance){
+            var parts = mrLocation.value.split(',');
+            if (parts.length === 2){
+              var lat = parseFloat(parts[0]);
+              var lng = parseFloat(parts[1]);
+              if (!isNaN(lat) && !isNaN(lng)){
+                var ll = [lat,lng];
+                meetupMapInstance.setView(ll, 14);
+                if (!meetupMarker){
+                  meetupMarker = L.marker(ll).addTo(meetupMapInstance);
+                } else {
+                  meetupMarker.setLatLng(ll);
+                }
+              }
+            }
+          }
+        }
+
+        // Expose for external callers (e.g., when opening the modal)
+        window.ensureMeetupMap = ensureMeetupMap;
+
+        // If user manually edits lat,lng string, sync marker
+        if (mrLocation && mrMap){
+          mrLocation.addEventListener('change', function(){
+            if (!mrLocation.value || !meetupMapInstance) return;
+            var parts = mrLocation.value.split(',');
+            if (parts.length === 2){
+              var lat = parseFloat(parts[0]);
+              var lng = parseFloat(parts[1]);
+              if (!isNaN(lat) && !isNaN(lng)){
+                var ll = [lat,lng];
+                meetupMapInstance.setView(ll, 14);
+                if (!meetupMarker){
+                  meetupMarker = L.marker(ll).addTo(meetupMapInstance);
+                } else {
+                  meetupMarker.setLatLng(ll);
+                }
+              }
+            }
+          });
+        }
+
+        btnSubmitMeetupRequest.addEventListener('click', function(){
+          var modal = document.getElementById('meetupRequestModal');
+          var msgEl = document.getElementById('meetupRequestMsg');
+          if (msgEl) msgEl.textContent = '';
+          if (!modal) return;
+          var txId = modal.getAttribute('data-transaction')||'';
+          var sellerId = modal.getAttribute('data-seller')||'';
+          var dEl = document.getElementById('mrDate');
+          var tEl = document.getElementById('mrTime');
+          var lEl = document.getElementById('mrLocation');
+          var descEl = document.getElementById('mrDesc');
+          var dateVal = dEl ? dEl.value : '';
+          var timeVal = tEl ? tEl.value : '';
+          var locVal = lEl ? lEl.value.trim() : '';
+          var descVal = descEl ? descEl.value.trim() : '';
+          if (!txId || !sellerId || !dateVal || !timeVal || !locVal){
+            if (msgEl) msgEl.textContent = 'Please fill date, time and location.';
+            return;
+          }
+          var fd = new FormData();
+          fd.append('action','request_meetup');
+          fd.append('transaction_id', txId);
+          fd.append('seller_id', sellerId);
+          fd.append('date', dateVal);
+          fd.append('time', timeVal);
+          fd.append('location', locVal);
+          fd.append('description', descVal);
+          btnSubmitMeetupRequest.disabled = true;
+          fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(res){
+              btnSubmitMeetupRequest.disabled = false;
+              if (!res || res.ok===false){
+                if (msgEl) msgEl.textContent = 'Failed to submit request.';
+              } else {
+                if (msgEl) msgEl.textContent = 'Request sent.';
+                closeModal('meetupRequestModal');
+              }
+            })
+            .catch(function(err){
+              btnSubmitMeetupRequest.disabled = false;
+              if (msgEl) msgEl.textContent = 'Network error.';
+            });
+        });
       }
       load();
 
@@ -732,7 +1149,8 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
               '<div>Date: '+(data.meetup_date||'N/A')+'</div>'+
               '<div>Time: '+(data.meetup_time||'N/A')+'</div>'+
               '<div>Location: '+(data.meetup_location||'N/A')+'</div>'+
-              '<div>BAT: '+(data.bat_fullname||'N/A')+'</div>';
+              '<div>BAT: '+(data.bat_fullname||'N/A')+'</div>'+
+              '<div id="meetupMap" style="margin-top:8px;width:100%;height:220px;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;"></div>';
           }
 
           body.innerHTML = ''+
@@ -752,7 +1170,9 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
             '</div>'+
             meetupInfo+
             '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">'+
+              '<button class="btn" id="btnSuggestMeetup">Suggest Meet-Up</button>'+ 
               '<button class="btn" id="btnSetMeetup">Set Meet-Up</button>'+ 
+              '<button class="btn" id="btnConfirmShow">Confirm Attendance</button>'+ 
               '<button class="btn" id="btnRateBuyer">Rate Buyer</button>'+ 
               '<button class="btn" id="btnReportBuyer" style="background:#ef4444;color:#fff;">Report Buyer</button>'+ 
             '</div>';
@@ -775,22 +1195,84 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
               wrap.appendChild(im);
             });
           }
+          var meetupMap = document.getElementById('meetupMap');
+          if (meetupMap && data.meetup_location){
+            var iframe = document.createElement('iframe');
+            iframe.src = 'https://www.google.com/maps?q='+encodeURIComponent(data.meetup_location)+'&output=embed';
+            iframe.style.border = '0';
+            iframe.style.width = '100%';
+            iframe.style.height = '100%';
+            iframe.setAttribute('loading','lazy');
+            meetupMap.appendChild(iframe);
+          }
           openModal('txModal');
 
           var statusLower = String(data.status||'').toLowerCase();
           var isCompleted = statusLower==='completed';
           var isStarted = statusLower==='started';
+          var isOngoing = statusLower==='ongoing';
           var rateBtn = document.getElementById('btnRateBuyer');
           var reportBtn = document.getElementById('btnReportBuyer');
           var meetBtn = document.getElementById('btnSetMeetup');
-          if (rateBtn){ rateBtn.disabled = !isCompleted; }
-          // Report Buyer is allowed for all statuses
-          if (reportBtn){ reportBtn.disabled = false; }
+          var btnConfirmShow = document.getElementById('btnConfirmShow');
+          var btnSuggestMeetup = document.getElementById('btnSuggestMeetup');
+          if (rateBtn){
+            if (!isCompleted){
+              // Only show Rate Buyer for completed transactions
+              rateBtn.style.display = 'none';
+            } else {
+              rateBtn.style.display = '';
+              rateBtn.disabled = false;
+              rateBtn.textContent = 'Rate Buyer';
+            }
+          }
+          // Report Buyer is allowed for all statuses by default
+          if (reportBtn){
+            reportBtn.disabled = false;
+            reportBtn.textContent = 'Report Buyer';
+          }
           if (meetBtn){ meetBtn.disabled = !isStarted; }
+
+          var hasMeetupDetails = !!(data.meetup_date || data.meetup_time || data.meetup_location);
+          if (btnConfirmShow){
+            btnConfirmShow.style.display = (isOngoing && hasMeetupDetails) ? '' : 'none';
+          }
+          if (btnSuggestMeetup){
+            btnSuggestMeetup.style.display = (isOngoing && !hasMeetupDetails) ? '' : 'none';
+          }
+
+          // Check if already rated / reported and update buttons
+          var txId = data.transaction_id || 0;
+          var buyerId = data.buyer_id || 0;
+
+          if (rateBtn && isCompleted && txId){
+            fetch('transactions.php?action=has_rating&transaction_id='+encodeURIComponent(txId), { credentials:'same-origin' })
+              .then(function(r){ return r.json(); })
+              .then(function(resp){
+                if (resp && resp.ok && resp.has_rating){
+                  rateBtn.disabled = true;
+                  rateBtn.textContent = 'Rated';
+                }
+              })
+              .catch(function(){});
+          }
+
+          if (reportBtn && buyerId){
+            fetch('transactions.php?action=has_report&buyer_id='+encodeURIComponent(buyerId), { credentials:'same-origin' })
+              .then(function(r){ return r.json(); })
+              .then(function(resp){
+                if (resp && resp.ok && resp.has_report){
+                  reportBtn.disabled = true;
+                  reportBtn.textContent = 'Reported';
+                }
+              })
+              .catch(function(){});
+          }
 
           if (rateBtn){
             rateBtn.addEventListener('click', function(){
               if (!isCompleted) return;
+              if (rateBtn.disabled) return;
               var rm = document.getElementById('rateModalSeller');
               rm.setAttribute('data-buyer', String(data.buyer_id||''));
               rm.setAttribute('data-transaction', String(data.transaction_id||''));
@@ -800,9 +1282,37 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
 
           if (reportBtn){
             reportBtn.addEventListener('click', function(){
+              if (reportBtn.disabled) return;
               var hid = document.getElementById('repBuyerId');
               if (hid) hid.value = String(data.buyer_id||'');
               openModal('reportBuyerModal');
+            });
+          }
+
+          if (btnConfirmShow){
+            btnConfirmShow.addEventListener('click', function(){
+              if (btnConfirmShow.disabled) return;
+              var modal = document.getElementById('confirmShowModal');
+              if (modal){
+                modal.setAttribute('data-transaction', String(data.transaction_id||''));
+                modal.setAttribute('data-seller', String(data.seller_id||''));
+                modal.setAttribute('data-buyer', String(data.buyer_id||''));
+                modal.setAttribute('data-bat', String((data.bat_id||'') || ''));
+              }
+              openModal('confirmShowModal');
+            });
+          }
+
+          if (btnSuggestMeetup){
+            btnSuggestMeetup.addEventListener('click', function(){
+              var modal = document.getElementById('meetupRequestModal');
+              if (modal){
+                modal.setAttribute('data-transaction', String(data.transaction_id||''));
+                modal.setAttribute('data-seller', String(data.seller_id||''));
+              }
+              var msg = document.getElementById('meetupRequestMsg'); if (msg) msg.textContent='';
+              openModal('meetupRequestModal');
+              if (typeof ensureMeetupMap === 'function') { ensureMeetupMap(); }
             });
           }
 
@@ -812,6 +1322,7 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
               if (!confirm('Set this transaction as ongoing and request BAT to schedule the meet-up?')) return;
               var fd = new FormData();
               fd.append('action','schedule_meetup');
+              fd.append('transaction_id', String(data.transaction_id||''));
               fd.append('listing_id', String(data.listing_id||''));
               fd.append('seller_id', String(data.seller_id||''));
               fd.append('buyer_id', String(data.buyer_id||''));
@@ -821,7 +1332,10 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
                 .then(function(res){
                   meetBtn.disabled = false; meetBtn.textContent = 'Set Meet-Up';
                   if (!res || res.ok===false){
-                    alert('Failed to set meet-up'+(res && res.code? (' (code '+res.code+')') : ''));
+                    var msg = 'Failed to set meet-up';
+                    if (res && res.code) msg += ' (code '+res.code+')';
+                    if (res && res.detail) msg += '\n'+res.detail;
+                    alert(msg);
                   } else {
                     alert('Transaction moved to Ongoing. BAT will schedule the meet-up.');
                     closeModal('txModal');
@@ -838,6 +1352,7 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
       });
 
       ['txModal','rateModalSeller','reportBuyerModal'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.addEventListener('click', function(ev){ if(ev.target===el) closeModal(id); }); }});
+      ['confirmShowModal','meetupRequestModal'].forEach(function(id){ var el=document.getElementById(id); if(el){ el.addEventListener('click', function(ev){ if(ev.target===el) closeModal(id); }); }});
 
       // Seller rating stars
       var currentRatingSeller = 5;
