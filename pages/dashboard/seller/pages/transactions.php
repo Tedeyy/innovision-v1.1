@@ -643,10 +643,10 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
     exit;
   }
 
-  [$dres,$dst,$dse] = sb_rest('DELETE','starttransactions',[],[],[
+  [$dres,$dst,$dse] = sb_rest('DELETE','starttransactions',[
     'transaction_id'=>'eq.'.$txId,
     'seller_id'=>'eq.'.$sellerId
-  ]);
+  ], null, ['Prefer: return=minimal']);
   if (!($dst>=200 && $dst<300)){
     echo json_encode(['ok'=>false,'error'=>'delete_start_failed','code'=>$dst]);
     exit;

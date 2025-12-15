@@ -125,11 +125,26 @@ function sb_rest($method, $path, $query = [], $body = null, $headers = []){
     // Choose best Authorization: user token -> service role (if set) -> anon key
     $service = sb_env('SUPABASE_SERVICE_ROLE_KEY') ?: '';
     $authKey = $at ?: ($service ?: sb_anon_key());
-    $hdrs = array_merge([
+
+    $hdrs = [
         'apikey: '.sb_anon_key(),
         'Authorization: Bearer '.$authKey,
         'Accept: application/json',
-    ], $headers);
+    ];
+
+    // Allow callers to override headers (e.g., Authorization) by de-duping by header name
+    $hdrMap = [];
+    foreach ($hdrs as $h){
+        $pos = strpos($h, ':');
+        $k = $pos === false ? strtolower(trim($h)) : strtolower(trim(substr($h, 0, $pos)));
+        $hdrMap[$k] = $h;
+    }
+    foreach ((array)$headers as $h){
+        $pos = strpos($h, ':');
+        $k = $pos === false ? strtolower(trim($h)) : strtolower(trim(substr($h, 0, $pos)));
+        $hdrMap[$k] = $h;
+    }
+    $hdrs = array_values($hdrMap);
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);

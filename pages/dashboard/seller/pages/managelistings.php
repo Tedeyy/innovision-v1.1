@@ -10,6 +10,23 @@ if (!$sellerId) {
   exit;
 }
 
+$sellerFolderName = (string)$sellerId;
+[$sellerInfo,$sellerInfoSt,$sellerInfoErr] = sb_rest('GET','seller',[
+  'select'=>'user_fname,user_mname,user_lname',
+  'user_id'=>'eq.'.(int)$sellerId,
+  'limit'=>1
+]);
+if ($sellerInfoSt>=200 && $sellerInfoSt<300 && is_array($sellerInfo) && isset($sellerInfo[0])){
+  $sf = (string)($sellerInfo[0]['user_fname'] ?? '');
+  $sm = (string)($sellerInfo[0]['user_mname'] ?? '');
+  $sl = (string)($sellerInfo[0]['user_lname'] ?? '');
+  $full = trim($sf.' '.($sm?:'').' '.$sl);
+  $san = strtolower(preg_replace('/[^a-z0-9]+/i','_', $full));
+  $san = trim($san, '_');
+  if ($san === '') { $san = 'user'; }
+  $sellerFolderName = (string)$sellerId.'_'.$san;
+}
+
 // Inline AJAX endpoints
 if (isset($_GET['action']) && $_GET['action'] === 'interests'){
   header('Content-Type: application/json');
@@ -59,11 +76,51 @@ if (isset($_GET['action']) && $_GET['action'] === 'buyer_profile'){
   echo json_encode(['ok'=>true,'data'=>$buyerData]);
   exit;
 }
+
+if (isset($_GET['action']) && $_GET['action'] === 'penalty_count'){
+  header('Content-Type: application/json');
+  $buyerId = isset($_GET['buyer_id']) ? (int)$_GET['buyer_id'] : 0;
+  if (!$buyerId) { echo json_encode(['ok'=>false,'error'=>'missing buyer_id']); exit; }
+  $oneMonthAgo = date('Y-m-d H:i:s', strtotime('-1 month'));
+  [$rows,$st,$err] = sb_rest('GET','penalty_log',[
+    'select'=>'report_id',
+    'buyer_id'=>'eq.'.$buyerId,
+    'created'=>'gte.'.$oneMonthAgo
+  ]);
+  if (!($st>=200 && $st<300) || !is_array($rows)) { echo json_encode(['ok'=>false,'error'=>'load_failed']); exit; }
+  echo json_encode(['ok'=>true,'count'=>count($rows)]);
+  exit;
+}
+
+if (isset($_GET['action']) && $_GET['action'] === 'start_status'){
+  header('Content-Type: application/json');
+  $listingId = isset($_GET['listing_id']) ? (int)$_GET['listing_id'] : 0;
+  if (!$listingId) { echo json_encode(['ok'=>false,'error'=>'missing listing_id']); exit; }
+  [$rows,$st,$err] = sb_rest('GET','starttransactions',[
+    'select'=>'transaction_id,listing_id,buyer_id,status,started_at',
+    'listing_id'=>'eq.'.$listingId,
+    'limit'=>1
+  ]);
+  if (!($st>=200 && $st<300) || !is_array($rows)) { echo json_encode(['ok'=>false,'error'=>'load_failed']); exit; }
+  $row = isset($rows[0]) ? $rows[0] : null;
+  echo json_encode(['ok'=>true,'exists'=>!empty($row),'data'=>$row]);
+  exit;
+}
 if (isset($_POST['action']) && $_POST['action'] === 'start_transaction'){
   header('Content-Type: application/json');
   $listingId = isset($_POST['listing_id']) ? (int)$_POST['listing_id'] : 0;
   $buyerId = isset($_POST['buyer_id']) ? (int)$_POST['buyer_id'] : 0;
   if (!$listingId || !$buyerId) { echo json_encode(['ok'=>false,'error'=>'missing params']); exit; }
+  // Guard: prevent starting the same listing twice
+  [$existingStart,$esSt,$esErr] = sb_rest('GET','starttransactions',[
+    'select'=>'transaction_id,listing_id,buyer_id,status',
+    'listing_id'=>'eq.'.$listingId,
+    'limit'=>1
+  ]);
+  if ($esSt>=200 && $esSt<300 && is_array($existingStart) && !empty($existingStart)){
+    echo json_encode(['ok'=>false,'error'=>'already_started','detail'=>'This listing already has a started transaction.']);
+    exit;
+  }
   $payload = [[
     'listing_id'=>$listingId,
     'seller_id'=>(int)$sellerId,
@@ -274,8 +331,9 @@ $deniedRows = ($tab==='denied') ? fetch_list(['deniedlivestocklisting'], $seller
         <button class="close-btn" data-close="buyerModal">Back</button>
       </div>
       <div id="buyerDetails" style="margin-top:8px;"></div>
+      <div id="buyerInterestMessage" style="margin-top:10px;"></div>
       <div class="grid2" style="margin-top:12px;">
-        <div class="counter">Recent Violations (placeholder)</div>
+        <div class="counter" id="buyerViolations">has No Violations for the past month :)</div>
         <div class="counter" id="buyerRating">Rating (placeholder)</div>
       </div>
     </div>
@@ -291,24 +349,30 @@ $deniedRows = ($tab==='denied') ? fetch_list(['deniedlivestocklisting'], $seller
 
       function rootForStatus(status){
         var s = (status||'').toLowerCase();
-        if (s==='pending' || s==='under review' || s==='review') return 'listings/underreview';
+        if (s==='pending' || s==='under review' || s==='review' || s==='underreview') return 'listings/underreview';
         if (s==='active' || s==='verified') return 'listings/verified';
         if (s==='denied') return 'listings/denied';
         if (s==='sold') return 'listings/sold';
         return 'listings/underreview';
       }
 
+      function createdKeyFrom(created){
+        var digits = (created||'').toString().replace(/\D/g,'');
+        return digits.slice(0,14);
+      }
+
       function renderImages(listingId, status, created){
         var imgs = $('#listingImages'); var note = $('#imgNotice');
         imgs.innerHTML=''; note.textContent='';
         var root = rootForStatus(status);
-        // Use legacy scheme for seller-side to avoid needing fullname folder
-        var legacyFolder = <?php echo (int)$sellerId; ?> + '_' + listingId;
+        var createdKey = createdKeyFrom(created);
+        var sellerFolder = <?php echo json_encode($sellerFolderName, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>;
+        var base = <?php echo json_encode(rtrim(sb_base_url(), '/'), JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>;
         var fails=0; var total=3;
         for (var i=1;i<=3;i++){
-          var src = '../../bat/pages/storage_image.php?path=' + root + '/' + legacyFolder + '/image' + i;
+          var src = base + '/storage/v1/object/public/' + root + '/' + sellerFolder + '/' + createdKey + '_' + i + 'img.jpg';
           var im = new Image(); im.width=150; im.height=150; im.alt='image'+i; im.src = src;
-          im.onerror = function(){ fails++; if (fails===total){ note.textContent='No images found in '+root+'/'+legacyFolder; } };
+          im.onerror = function(){ fails++; if (fails===total){ note.textContent='No images found in '+root+'/'+sellerFolder; } };
           imgs.appendChild(im);
         }
       }
@@ -319,6 +383,16 @@ $deniedRows = ($tab==='denied') ? fetch_list(['deniedlivestocklisting'], $seller
       }
       function fetchBuyer(buyerId){
         return fetch('managelistings.php?action=buyer_profile&buyer_id='+encodeURIComponent(buyerId), { credentials:'same-origin' })
+          .then(function(r){ return r.json(); });
+      }
+
+      function fetchPenaltyCount(buyerId){
+        return fetch('managelistings.php?action=penalty_count&buyer_id='+encodeURIComponent(buyerId), { credentials:'same-origin' })
+          .then(function(r){ return r.json(); });
+      }
+
+      function fetchStartStatus(listingId){
+        return fetch('managelistings.php?action=start_status&listing_id='+encodeURIComponent(listingId), { credentials:'same-origin' })
           .then(function(r){ return r.json(); });
       }
       function startTransaction(listingId, buyerId){
@@ -352,10 +426,19 @@ $deniedRows = ($tab==='denied') ? fetch_list(['deniedlivestocklisting'], $seller
               '<td>'+(b.bdate||'')+'</td>'+
               '<td>'+
                 '<button class="btn btn-start" data-buyer="'+(b.user_id||'')+'" data-listing="'+data.id+'">Initiate Transaction</button>\n'+
-                '<button class="btn btn-profile" data-buyer="'+(b.user_id||'')+'">View Profile</button>'+
+                '<button class="btn btn-profile" data-buyer="'+(b.user_id||'')+'" data-msg="'+encodeURIComponent((row.message||'').toString())+'">View Buyer</button>'+
               '</td>';
             tbody.appendChild(tr);
           });
+
+          fetchStartStatus(data.id).then(function(s){
+            if (!s || !s.ok || !s.exists) return;
+            var btns = tbody.querySelectorAll('button.btn-start');
+            Array.prototype.slice.call(btns).forEach(function(b){
+              b.disabled = true;
+              b.textContent = 'Already Started';
+            });
+          }).catch(function(){});
         });
         openModal('listingModal');
       }
@@ -397,6 +480,10 @@ $deniedRows = ($tab==='denied') ? fetch_list(['deniedlivestocklisting'], $seller
         if (e.target && e.target.classList.contains('btn-profile')){
           var buyerId = e.target.getAttribute('data-buyer');
           var details = $('#buyerDetails'); details.innerHTML='Loading...';
+          var msgEl = $('#buyerInterestMessage');
+          if (msgEl) { msgEl.innerHTML = ''; }
+          var vioEl = $('#buyerViolations');
+          if (vioEl) { vioEl.textContent = 'has No Violations for the past month :)'; }
           fetchBuyer(buyerId).then(function(res){
             if (!res.ok){ details.innerHTML='Failed to load buyer profile'; }
             else {
@@ -409,14 +496,37 @@ $deniedRows = ($tab==='denied') ? fetch_list(['deniedlivestocklisting'], $seller
                 '<div>Contact: '+(b.contact||'')+'</div>'+
                 '<div>Address: '+(b.address||'')+'</div>'+
                 '<div>'+[b.barangay,b.municipality,b.province].filter(Boolean).join(', ')+'</div>';
+
+              var rawMsg = e.target.getAttribute('data-msg') || '';
+              var interestMsg = '';
+              try { interestMsg = decodeURIComponent(rawMsg); } catch(_){ interestMsg = rawMsg; }
+              if (msgEl) {
+                msgEl.innerHTML = '<div style="margin-top:6px;padding-top:10px;border-top:1px solid #e2e8f0;">'+
+                  '<div style="font-weight:600;">Message</div>'+
+                  '<div class="subtle" style="white-space:pre-wrap;">'+(interestMsg||'No message provided.')+'</div>'+
+                '</div>';
+              }
               
               var ratingEl = $('#buyerRating');
               if (ratingEl) {
                 ratingEl.innerHTML = rating.average + ' ⭐ (' + rating.count + ' rating' + (rating.count !== 1 ? 's' : '') + ')';
               }
+
+              fetchPenaltyCount(buyerId).then(function(p){
+                if (!vioEl) return;
+                if (!p || !p.ok) {
+                  vioEl.textContent = 'has No Violations for the past month :)';
+                  return;
+                }
+                var c = parseInt(p.count || 0, 10);
+                if (c > 0) vioEl.textContent = 'Recent Violations (past month): ' + c;
+                else vioEl.textContent = 'has No Violations for the past month :)';
+              }).catch(function(){
+                if (vioEl) vioEl.textContent = 'has No Violations for the past month :)';
+              });
+              openModal('buyerModal');
             }
           });
-          openModal('buyerModal');
         }
       });
       ['listingModal','buyerModal'].forEach(function(id){

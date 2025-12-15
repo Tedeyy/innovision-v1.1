@@ -312,47 +312,57 @@ if (isset($_POST['action']) && $_POST['action']==='complete_transaction'){
   $paymentMethod = isset($_POST['payment_method']) ? (string)$_POST['payment_method'] : '';
   if (!$txId || !$listingId || !$sellerId || !$buyerId){ echo json_encode(['ok'=>false,'error'=>'missing_params']); exit; }
   if ($result==='successful' && ($price<=0 || $paymentMethod==='')){ echo json_encode(['ok'=>false,'error'=>'missing_payment']); exit; }
+  $serviceRoleKey = sb_env('SUPABASE_SERVICE_ROLE_KEY') ?: '';
+  $adminHeaders = $serviceRoleKey ? ['Authorization: Bearer '.$serviceRoleKey] : [];
+  if (!$serviceRoleKey){ echo json_encode(['ok'=>false,'error'=>'supabase_service_role_key_missing']); exit; }
   // Fetch the ongoing transaction for details
   [$txRows,$txStatus,$txError] = sb_rest('GET','ongoingtransactions',[
     'select'=>'*', 'transaction_id'=>'eq.'.$txId, 'listing_id'=>'eq.'.$listingId, 'seller_id'=>'eq.'.$sellerId, 'buyer_id'=>'eq.'.$buyerId, 'limit'=>1
-  ]);
+  ], null, $adminHeaders);
   if (!($txStatus>=200 && $txStatus<300) || !is_array($txRows) || empty($txRows)){
     echo json_encode(['ok'=>false,'error'=>'transaction_not_found']); exit;
   }
   $tx = $txRows[0];
   $now = date('Y-m-d H:i:s');
-  // Insert into completedtransactions
-  [$compRes,$compSt,$compErr] = sb_rest('POST','completedtransactions',[],[[
-    'transaction_id'=>$txId,
-    'listing_id'=>$listingId,
-    'seller_id'=>$sellerId,
-    'buyer_id'=>$buyerId,
-    'status'=>'Completed',
-    'started_at'=>$tx['started_at'] ?? null,
-    'bat_id'=>$batId,
-    'transaction_date'=>$tx['transaction_date'] ?? $now,
-    'transaction_location'=>$tx['transaction_location'] ?? null,
-    'completed_transaction'=>$now
-  ]]);
-  if (!($compSt>=200 && $compSt<300)){
-    echo json_encode(['ok'=>false,'error'=>'complete_insert_failed','code'=>$compSt]); exit;
-  }
-  // Log into transactions_logs
-  sb_rest('POST','transactions_logs',[],[[
-    'transaction_id'=>$txId,
-    'listing_id'=>$listingId,
-    'seller_id'=>$sellerId,
-    'buyer_id'=>$buyerId,
-    'status'=>'Completed',
-    'started_at'=>$tx['started_at'] ?? null,
-    'bat_id'=>$batId,
-    'transaction_date'=>$now,
-    'transaction_location'=>$tx['transaction_location'] ?? null,
-    'completed_transaction'=>$now
-  ]], ['Prefer: return=minimal']);
-  // Result-specific insert
-  if (strtolower($result)==='successful'){
-    sb_rest('POST','successfultransactions',[],[[
+
+  if ($result === 'successful') {
+    // Completed transaction
+    [$existingComp,$compExistStatus,$compExistError] = sb_rest('GET','completedtransactions',[
+      'select'=>'transaction_id',
+      'transaction_id'=>'eq.'.$txId,
+      'limit'=>1
+    ], null, $adminHeaders);
+
+    $compPayload = [[
+      'transaction_id'=>$txId,
+      'listing_id'=>$listingId,
+      'seller_id'=>$sellerId,
+      'buyer_id'=>$buyerId,
+      'status'=>'Completed',
+      'started_at'=>$tx['started_at'] ?? null,
+      'bat_id'=>$batId,
+      'transaction_date'=>$tx['transaction_date'] ?? $now,
+      'transaction_location'=>$tx['transaction_location'] ?? null,
+      'completed_transaction'=>$now
+    ]];
+
+    if ($compExistStatus>=200 && $compExistStatus<300 && is_array($existingComp) && !empty($existingComp)){
+      [$compRes,$compSt,$compErr] = sb_rest('PATCH','completedtransactions',[
+        'transaction_id'=>'eq.'.$txId,
+        'select'=>'transaction_id'
+      ],$compPayload, array_merge($adminHeaders, ['Prefer: return=representation']));
+    } else {
+      [$compRes,$compSt,$compErr] = sb_rest('POST','completedtransactions',[
+        'select'=>'transaction_id'
+      ],$compPayload, array_merge($adminHeaders, ['Prefer: return=representation']));
+    }
+
+    if (!($compSt>=200 && $compSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'completedtransactions_write_failed','code'=>$compSt,'detail'=>$compErr]); exit;
+    }
+
+    // Successful transaction
+    $succPayload = [[
       'transaction_id'=>$txId,
       'listing_id'=>$listingId,
       'seller_id'=>$sellerId,
@@ -361,21 +371,172 @@ if (isset($_POST['action']) && $_POST['action']==='complete_transaction'){
       'payment_method'=>$paymentMethod,
       'status'=>'Successful',
       'transaction_date'=>$now
-    ]], ['Prefer: return=minimal']);
-  } else {
-    sb_rest('POST','failedtransactions',[],[[
+    ]];
+
+    [$succRes,$succSt,$succErr] = sb_rest('POST','successfultransactions',[
+      'select'=>'transaction_id,listing_id'
+    ],$succPayload, array_merge($adminHeaders, ['Prefer: return=representation']));
+    if (!($succSt>=200 && $succSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'successfultransactions_insert_failed','code'=>$succSt,'detail'=>$succErr]); exit;
+    }
+
+    // Move listing from activelivestocklisting to soldlivestocklisting
+    [$activeList,$listSt,$listErr] = sb_rest('GET','activelivestocklisting',[
+      'select'=>'*',
+      'listing_id'=>'eq.'.$listingId,
+      'limit'=>1
+    ], null, $adminHeaders);
+    if (!($listSt>=200 && $listSt<300) || !is_array($activeList) || empty($activeList)){
+      echo json_encode(['ok'=>false,'error'=>'activelivestocklisting_not_found']); exit;
+    }
+    $listingData = $activeList[0];
+
+    [$soldRes,$soldSt,$soldErr] = sb_rest('POST','soldlivestocklisting',[
+      'select'=>'seller_id'
+    ],[[
+      'seller_id'=>$listingData['seller_id'],
+      'livestock_type'=>$listingData['livestock_type'],
+      'breed'=>$listingData['breed'],
+      'address'=>$listingData['address'],
+      'age'=>$listingData['age'],
+      'weight'=>$listingData['weight'],
+      'price'=>$listingData['price'],
+      'soldprice'=>$price,
+      'status'=>'Sold',
+      'created'=>$listingData['created']
+    ]], array_merge($adminHeaders, ['Prefer: return=representation']));
+    if (!($soldSt>=200 && $soldSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'soldlivestocklisting_insert_failed','code'=>$soldSt,'detail'=>$soldErr]); exit;
+    }
+
+    // Log listing move
+    [$livestockLogRes,$livestockLogSt,$livestockLogErr] = sb_rest('POST','livestocklisting_logs',[],[[
+      'seller_id'=>$listingData['seller_id'],
+      'livestock_type'=>$listingData['livestock_type'],
+      'breed'=>$listingData['breed'],
+      'address'=>$listingData['address'],
+      'age'=>$listingData['age'],
+      'weight'=>$listingData['weight'],
+      'price'=>$listingData['price'],
+      'status'=>'Sold',
+      'created'=>$listingData['created']
+    ]], null, $adminHeaders);
+    if (!($livestockLogSt>=200 && $livestockLogSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'livestocklisting_logs_insert_failed','code'=>$livestockLogSt,'detail'=>$livestockLogErr]); exit;
+    }
+
+    // Delete active listing
+    [$delActiveRes,$delActiveSt,$delActiveErr] = sb_rest('DELETE','activelivestocklisting',[
+      'listing_id'=>'eq.'.$listingId
+    ], null, array_merge($adminHeaders, ['Prefer: return=minimal']));
+    if (!($delActiveSt>=200 && $delActiveSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'activelivestocklisting_delete_failed','code'=>$delActiveSt,'detail'=>$delActiveErr]); exit;
+    }
+
+    // Transfer pins and log
+    [$activePins,$pinsSt,$pinsErr] = sb_rest('GET','activelocation_pins',[
+      'select'=>'*',
+      'listing_id'=>'eq.'.$listingId
+    ], null, $adminHeaders);
+    if ($pinsSt>=200 && $pinsSt<300 && is_array($activePins)) {
+      foreach ($activePins as $pin) {
+        [$pinRes,$pinSt,$pinErr] = sb_rest('POST','soldlocation_pins',[],[[
+          'location'=>$pin['location'],
+          'listing_id'=>$pin['listing_id'],
+          'status'=>'Sold',
+          'created_at'=>$pin['created_at']
+        ]], null, $adminHeaders);
+        if (!($pinSt>=200 && $pinSt<300)){
+          echo json_encode(['ok'=>false,'error'=>'soldlocation_pins_insert_failed','code'=>$pinSt,'detail'=>$pinErr]); exit;
+        }
+
+        [$logRes,$logSt,$logErr] = sb_rest('POST','location_pin_logs',[],[[
+          'location'=>$pin['location'],
+          'listing_id'=>$pin['listing_id'],
+          'status'=>'Sold',
+          'created_at'=>$pin['created_at']
+        ]], null, $adminHeaders);
+        if (!($logSt>=200 && $logSt<300)){
+          echo json_encode(['ok'=>false,'error'=>'location_pin_logs_insert_failed','code'=>$logSt,'detail'=>$logErr]); exit;
+        }
+      }
+
+      [$delPinsRes,$delPinsSt,$delPinsErr] = sb_rest('DELETE','activelocation_pins',[
+        'listing_id'=>'eq.'.$listingId
+      ], null, array_merge($adminHeaders, ['Prefer: return=minimal']));
+      if (!($delPinsSt>=200 && $delPinsSt<300)){
+        echo json_encode(['ok'=>false,'error'=>'activelocation_pins_delete_failed','code'=>$delPinsSt,'detail'=>$delPinsErr]); exit;
+      }
+    }
+
+    // Transaction log
+    [$tlogRes,$tlogSt,$tlogErr] = sb_rest('POST','transactions_logs',[],[[
       'transaction_id'=>$txId,
       'listing_id'=>$listingId,
       'seller_id'=>$sellerId,
       'buyer_id'=>$buyerId,
-      'price'=>($price>0?$price:0),
-      'payment_method'=>($paymentMethod!==''?$paymentMethod:null),
-      'status'=>'Failed',
-      'transaction_date'=>$now
-    ]], ['Prefer: return=minimal']);
+      'status'=>'Completed',
+      'started_at'=>$tx['started_at'] ?? null,
+      'bat_id'=>$batId,
+      'transaction_date'=>$now,
+      'transaction_location'=>$tx['transaction_location'] ?? null,
+      'completed_transaction'=>$now
+    ]], null, $adminHeaders);
+    if (!($tlogSt>=200 && $tlogSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'transactions_logs_insert_failed','code'=>$tlogSt,'detail'=>$tlogErr]); exit;
+    }
+
+    // Remove from ongoingtransactions
+    [$delTxRes,$delTxSt,$delTxErr] = sb_rest('DELETE','ongoingtransactions',[
+      'transaction_id'=>'eq.'.$txId
+    ], null, array_merge($adminHeaders, ['Prefer: return=minimal']));
+    if (!($delTxSt>=200 && $delTxSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'ongoingtransactions_delete_failed','code'=>$delTxSt,'detail'=>$delTxErr]); exit;
+    }
+
+    echo json_encode(['ok'=>true]); exit;
   }
-  // Remove from ongoingtransactions
-  sb_rest('DELETE','ongoingtransactions',[ 'transaction_id'=>'eq.'.$txId ], null, ['Prefer: return=minimal']);
+
+  // Failed flow
+  [$failRes,$failSt,$failErr] = sb_rest('POST','failedtransactions',[
+    'select'=>'transaction_id'
+  ],[[
+    'transaction_id'=>$txId,
+    'listing_id'=>$listingId,
+    'seller_id'=>$sellerId,
+    'buyer_id'=>$buyerId,
+    'price'=>$price,
+    'payment_method'=>$paymentMethod,
+    'status'=>'Failed',
+    'transaction_date'=>$now
+  ]], array_merge($adminHeaders, ['Prefer: return=representation']));
+  if (!($failSt>=200 && $failSt<300)){
+    echo json_encode(['ok'=>false,'error'=>'failedtransactions_insert_failed','code'=>$failSt,'detail'=>$failErr]); exit;
+  }
+
+  [$tlogRes,$tlogSt,$tlogErr] = sb_rest('POST','transactions_logs',[],[[
+    'transaction_id'=>$txId,
+    'listing_id'=>$listingId,
+    'seller_id'=>$sellerId,
+    'buyer_id'=>$buyerId,
+    'status'=>'Failed',
+    'started_at'=>$tx['started_at'] ?? null,
+    'bat_id'=>$batId,
+    'transaction_date'=>$now,
+    'transaction_location'=>$tx['transaction_location'] ?? null,
+    'completed_transaction'=>$now
+  ]], null, $adminHeaders);
+  if (!($tlogSt>=200 && $tlogSt<300)){
+    echo json_encode(['ok'=>false,'error'=>'transactions_logs_insert_failed','code'=>$tlogSt,'detail'=>$tlogErr]); exit;
+  }
+
+  [$delTxRes,$delTxSt,$delTxErr] = sb_rest('DELETE','ongoingtransactions',[
+    'transaction_id'=>'eq.'.$txId
+  ], null, array_merge($adminHeaders, ['Prefer: return=minimal']));
+  if (!($delTxSt>=200 && $delTxSt<300)){
+    echo json_encode(['ok'=>false,'error'=>'ongoingtransactions_delete_failed','code'=>$delTxSt,'detail'=>$delTxErr]); exit;
+  }
+
   echo json_encode(['ok'=>true]); exit;
 }
 
@@ -547,6 +708,12 @@ foreach ($sp as $p) {
     .table{width:100%;border-collapse:collapse}
     .table th,.table td{padding:8px;text-align:left}
     .table thead tr{border-bottom:1px solid #e2e8f0}
+    /* Scrollable table styles */
+    .table-container{max-height:400px;overflow-y:auto;overflow-x:hidden;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:16px}
+    .table-container .table{margin:0;border:none;width:100%}
+    .table-container thead{position:sticky;top:0;background:#ffffff;z-index:10;border-bottom:2px solid #e2e8f0}
+    .table-container thead th{background:#ffffff}
+    .table-container tbody{overflow-y:scroll}
     @media (max-width:640px){
       /* Smaller base font for entire page */
       body{font-size:12px}
@@ -591,36 +758,38 @@ foreach ($sp as $p) {
       <?php if (!$start['ok']): ?>
         <div style="margin:6px 0;padding:8px;border:1px solid #fecaca;background:#fef2f2;color:#7f1d1d;border-radius:8px;">Failed to load started transactions (code <?php echo (int)$start['code']; ?>)</div>
       <?php endif; ?>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Seller</th>
-            <th>Buyer</th>
-            <th>Status</th>
-            <th>Timestamp</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php $startRows = $start['rows'] ?? []; ?>
-          <?php if (count($startRows)===0): ?>
-            <tr><td colspan="7" style="color:#4a5568;">No started transactions.</td></tr>
-          <?php else: foreach ($startRows as $r): 
-            $s = $r['seller'] ?? null;
-            $b = $r['buyer'] ?? null;
-            $sellerName = $s ? trim(($s['user_fname']??'').' '.(($s['user_mname']??'')?($s['user_mname'].' '):'').($s['user_lname']??'')) : ($r['seller_id'] ?? '');
-            $buyerName  = $b ? trim(($b['user_fname']??'').' '.(($b['user_mname']??'')?($b['user_mname'].' '):'').($b['user_lname']??'')) : ($r['buyer_id'] ?? '');
-          ?>
+      <div class="table-container">
+        <table class="table">
+          <thead>
             <tr>
-              <td><?php echo esc($sellerName); ?></td>
-              <td><?php echo esc($buyerName); ?></td>
-              <td><?php echo esc($r['status'] ?? ''); ?></td>
-              <td><?php echo esc(($r['started_at'] ?? '') ? date('H/i d/m/Y', strtotime($r['started_at'])) : ''); ?></td>
-              <td><button class="btn btn-show" data-row="<?php echo esc(json_encode($r)); ?>">Show</button></td>
+              <th>Seller</th>
+              <th>Buyer</th>
+              <th>Status</th>
+              <th>Timestamp</th>
+              <th>Actions</th>
             </tr>
-          <?php endforeach; endif; ?>
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            <?php $startRows = $start['rows'] ?? []; ?>
+            <?php if (count($startRows)===0): ?>
+              <tr><td colspan="5" style="color:#4a5568;">No started transactions.</td></tr>
+            <?php else: foreach ($startRows as $r): 
+              $s = $r['seller'] ?? null;
+              $b = $r['buyer'] ?? null;
+              $sellerName = $s ? trim(($s['user_fname']??'').' '.(($s['user_mname']??'')?($s['user_mname'].' '):'').($s['user_lname']??'')) : ($r['seller_id'] ?? '');
+              $buyerName  = $b ? trim(($b['user_fname']??'').' '.(($b['user_mname']??'')?($b['user_mname'].' '):'').($b['user_lname']??'')) : ($r['buyer_id'] ?? '');
+            ?>
+              <tr>
+                <td><?php echo esc($sellerName); ?></td>
+                <td><?php echo esc($buyerName); ?></td>
+                <td><?php echo esc($r['status'] ?? ''); ?></td>
+                <td><?php echo esc(($r['started_at'] ?? '') ? date('H/i d/m/Y', strtotime($r['started_at'])) : ''); ?></td>
+                <td><button class="btn btn-show" data-row="<?php echo esc(json_encode($r)); ?>">Show</button></td>
+              </tr>
+            <?php endforeach; endif; ?>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div class="card section">
@@ -628,42 +797,44 @@ foreach ($sp as $p) {
       <?php if (!$ongo['ok']): ?>
         <div style="margin:6px 0;padding:8px;border:1px solid #fecaca;background:#fef2f2;color:#7f1d1d;border-radius:8px;">Failed to load ongoing transactions (code <?php echo (int)$ongo['code']; ?>)</div>
       <?php endif; ?>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Seller</th>
-            <th>Buyer</th>
-            <th>Status</th>
-            <th>Timestamp</th>
-            <th>BAT Name</th>
-            <th>Meet-up Date</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php $ongoRows = $ongo['rows'] ?? []; ?>
-          <?php if (count($ongoRows)===0): ?>
-            <tr><td colspan="7" style="color:#4a5568;">No ongoing transactions.</td></tr>
-          <?php else: foreach ($ongoRows as $r): 
-            $s = $r['seller'] ?? null;
-            $b = $r['buyer'] ?? null;
-            $batRow = $r['bat'] ?? null;
-            $sellerName = $s ? trim(($s['user_fname']??'').' '.(($s['user_mname']??'')?($s['user_mname'].' '):'').($s['user_lname']??'')) : ($r['seller_id'] ?? '');
-            $buyerName  = $b ? trim(($b['user_fname']??'').' '.(($b['user_mname']??'')?($b['user_mname'].' '):'').($b['user_lname']??'')) : ($r['buyer_id'] ?? '');
-            $batName    = $batRow ? trim(($batRow['user_fname']??'').' '.(($batRow['user_mname']??'')?($batRow['user_mname'].' '):'').($batRow['user_lname']??'')) : ($r['bat_id'] ?? $r['Bat_id'] ?? '');
-          ?>
+      <div class="table-container">
+        <table class="table">
+          <thead>
             <tr>
-              <td><?php echo esc($sellerName); ?></td>
-              <td><?php echo esc($buyerName); ?></td>
-              <td><?php echo esc($r['status'] ?? ''); ?></td>
-              <td><?php echo esc(($r['started_at'] ?? '') ? date('H/i d/m/Y', strtotime($r['started_at'])) : ''); ?></td>
-              <td><?php echo esc($batName); ?></td>
-              <td><?php echo esc(($r['transaction_date'] ?? '') ? date('H/i d/m/Y', strtotime($r['transaction_date'])) : ''); ?></td>
-              <td><button class="btn btn-show" data-row="<?php echo esc(json_encode($r)); ?>">Show</button></td>
+              <th>Seller</th>
+              <th>Buyer</th>
+              <th>Status</th>
+              <th>Timestamp</th>
+              <th>BAT Name</th>
+              <th>Meet-up Date</th>
+              <th>Actions</th>
             </tr>
-          <?php endforeach; endif; ?>
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            <?php $ongoRows = $ongo['rows'] ?? []; ?>
+            <?php if (count($ongoRows)===0): ?>
+              <tr><td colspan="7" style="color:#4a5568;">No ongoing transactions.</td></tr>
+            <?php else: foreach ($ongoRows as $r): 
+              $s = $r['seller'] ?? null;
+              $b = $r['buyer'] ?? null;
+              $batRow = $r['bat'] ?? null;
+              $sellerName = $s ? trim(($s['user_fname']??'').' '.(($s['user_mname']??'')?($s['user_mname'].' '):'').($s['user_lname']??'')) : ($r['seller_id'] ?? '');
+              $buyerName  = $b ? trim(($b['user_fname']??'').' '.(($b['user_mname']??'')?($b['user_mname'].' '):'').($b['user_lname']??'')) : ($r['buyer_id'] ?? '');
+              $batName    = $batRow ? trim(($batRow['user_fname']??'').' '.(($batRow['user_mname']??'')?($batRow['user_mname'].' '):'').($batRow['user_lname']??'')) : ($r['bat_id'] ?? $r['Bat_id'] ?? '');
+            ?>
+              <tr>
+                <td><?php echo esc($sellerName); ?></td>
+                <td><?php echo esc($buyerName); ?></td>
+                <td><?php echo esc($r['status'] ?? ''); ?></td>
+                <td><?php echo esc(($r['started_at'] ?? '') ? date('H/i d/m/Y', strtotime($r['started_at'])) : ''); ?></td>
+                <td><?php echo esc($batName); ?></td>
+                <td><?php echo esc(($r['transaction_date'] ?? '') ? date('H/i d/m/Y', strtotime($r['transaction_date'])) : ''); ?></td>
+                <td><button class="btn btn-show" data-row="<?php echo esc(json_encode($r)); ?>">Show</button></td>
+              </tr>
+            <?php endforeach; endif; ?>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div class="card section">
@@ -671,44 +842,42 @@ foreach ($sp as $p) {
       <?php if (!$done['ok']): ?>
         <div style="margin:6px 0;padding:8px;border:1px solid #fecaca;background:#fef2f2;color:#7f1d1d;border-radius:8px;">Failed to load completed transactions (code <?php echo (int)$done['code']; ?>)</div>
       <?php endif; ?>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Seller</th>
-            <th>Buyer</th>
-            <th>Status</th>
-            <th>Timestamp</th>
-            <th>BAT Name</th>
-            <th>Meet-up Date</th>
-            <th>Completed</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php $doneRows = $done['rows'] ?? []; ?>
-          <?php if (count($doneRows)===0): ?>
-            <tr><td colspan="8" style="color:#4a5568;">No completed transactions.</td></tr>
-          <?php else: foreach ($doneRows as $r): 
-            $s = $r['seller'] ?? null;
-            $b = $r['buyer'] ?? null;
-            $batRow = $r['bat'] ?? null;
-            $sellerName = $s ? trim(($s['user_fname']??'').' '.(($s['user_mname']??'')?($s['user_mname'].' '):'').($s['user_lname']??'')) : ($r['seller_id'] ?? '');
-            $buyerName  = $b ? trim(($b['user_fname']??'').' '.(($b['user_mname']??'')?($b['user_mname'].' '):'').($b['user_lname']??'')) : ($r['buyer_id'] ?? '');
-            $batName    = $batRow ? trim(($batRow['user_fname']??'').' '.(($batRow['user_mname']??'')?($batRow['user_mname'].' '):'').($batRow['user_lname']??'')) : ($r['bat_id'] ?? '');
-          ?>
+      <div class="table-container">
+        <table class="table">
+          <thead>
             <tr>
-              <td><?php echo esc($sellerName); ?></td>
-              <td><?php echo esc($buyerName); ?></td>
-              <td><?php echo esc($r['status'] ?? ''); ?></td>
-              <td><?php echo esc(($r['started_at'] ?? '') ? date('H/i d/m/Y', strtotime($r['started_at'])) : ''); ?></td>
-              <td><?php echo esc($batName); ?></td>
-              <td><?php echo esc(($r['transaction_date'] ?? '') ? date('H/i d/m/Y', strtotime($r['transaction_date'])) : ''); ?></td>
-              <td><?php echo esc(($r['completed_transaction'] ?? '') ? date('H/i d/m/Y', strtotime($r['completed_transaction'])) : ''); ?></td>
-              <td><button class="btn btn-show" data-row="<?php echo esc(json_encode($r)); ?>">Show</button></td>
+              <th>Seller</th>
+              <th>Buyer</th>
+              <th>Status</th>
+              <th>BAT Name</th>
+              <th>Completed</th>
+              <th>Actions</th>
             </tr>
-          <?php endforeach; endif; ?>
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            <?php $doneRows = $done['rows'] ?? []; ?>
+            <?php if (count($doneRows)===0): ?>
+              <tr><td colspan="6" style="color:#4a5568;">No completed transactions.</td></tr>
+            <?php else: foreach ($doneRows as $r): 
+              $s = $r['seller'] ?? null;
+              $b = $r['buyer'] ?? null;
+              $batRow = $r['bat'] ?? null;
+              $sellerName = $s ? trim(($s['user_fname']??'').' '.(($s['user_mname']??'')?($s['user_mname'].' '):'').($s['user_lname']??'')) : ($r['seller_id'] ?? '');
+              $buyerName  = $b ? trim(($b['user_fname']??'').' '.(($b['user_mname']??'')?($b['user_mname'].' '):'').($b['user_lname']??'')) : ($r['buyer_id'] ?? '');
+              $batName    = $batRow ? trim(($batRow['user_fname']??'').' '.(($batRow['user_mname']??'')?($batRow['user_mname'].' '):'').($batRow['user_lname']??'')) : ($r['bat_id'] ?? '');
+            ?>
+              <tr>
+                <td><?php echo esc($sellerName); ?></td>
+                <td><?php echo esc($buyerName); ?></td>
+                <td><?php echo esc($r['status'] ?? ''); ?></td>
+                <td><?php echo esc($batName); ?></td>
+                <td><?php echo esc(($r['completed_transaction'] ?? '') ? date('H/i d/m/Y', strtotime($r['completed_transaction'])) : ''); ?></td>
+                <td><button class="btn btn-show" data-row="<?php echo esc(json_encode($r)); ?>">Show</button></td>
+              </tr>
+            <?php endforeach; endif; ?>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     
@@ -735,14 +904,40 @@ foreach ($sp as $p) {
       var currentTxMap = null;
       var currentTxMarker = null;
       function destroyTxMap(){ try{ if (currentTxMap){ currentTxMap.remove(); } }catch(e){} currentTxMap=null; currentTxMarker=null; }
-      $all('.close-btn').forEach(function(b){ b.addEventListener('click', function(){ destroyTxMap(); var body=document.getElementById('txBody'); if(body) body.innerHTML=''; closeModal(b.getAttribute('data-close')); }); });
+      $all('.close-btn').forEach(function(b){ 
+        b.addEventListener('click', function(){ 
+          var modalId = b.getAttribute('data-close');
+          if (modalId === 'batCompleteModal') {
+            closeModal(modalId);
+          } else if (modalId === 'txModal') {
+            // Also close batCompleteModal if it's open
+            var batCompleteModal = document.getElementById('batCompleteModal');
+            if (batCompleteModal && batCompleteModal.style.display !== 'none') {
+              closeModal('batCompleteModal');
+            }
+            destroyTxMap(); 
+            var body=document.getElementById('txBody'); 
+            if(body) body.innerHTML=''; 
+            closeModal(modalId);
+          } else {
+            destroyTxMap(); 
+            var body=document.getElementById('txBody'); 
+            if(body) body.innerHTML=''; 
+            closeModal(modalId);
+          }
+        }); 
+      });
       document.addEventListener('click', function(e){
         if (e.target && e.target.classList.contains('btn-show')){
           var data = {};
           try{ data = JSON.parse(e.target.getAttribute('data-row')||'{}'); }catch(_){ data={}; }
-          var isOngoing = !!(data && (data.bat_id || data.Bat_id || data.transaction_date || data.Transaction_date));
+          var statusVal = (data && (data.status || data.Status) ? (data.status || data.Status) : '').toString().trim();
+          var statusLower = statusVal.toLowerCase();
+          var isStartingStarted = (statusLower === 'starting' || statusLower === 'started');
+          var isOngoing = !isStartingStarted;
           var isCompleted = !!(data && (data.completed_transaction || data.completed_Transaction));
-          document.getElementById('txTitle').textContent = (isCompleted? 'Completed' : (isOngoing? 'Ongoing' : 'Started')) + ' Transaction #'+(data.transaction_id||'');
+          var canEditMeetup = (!isCompleted && !isStartingStarted);
+          document.getElementById('txTitle').textContent = (isCompleted? 'Completed' : (isStartingStarted? 'Started' : 'Ongoing')) + ' Transaction #'+(data.transaction_id||'');
           var txBody = document.getElementById('txBody');
           var locVal = (data.transaction_location || data.Transaction_location || '').toString().trim();
           var whenVal = data.transaction_date || data.Transaction_date || '';
@@ -780,7 +975,7 @@ foreach ($sp as $p) {
                       '<div>'+priceHtml+'</div>'+
                       finalPriceHtml +
                       '<div style="margin-top:4px;">Address: '+(listing.address||'')+'</div>'+
-                      '<div class="subtle" style="margin-top:4px;">Listing #'+(listing.listing_id||'')+' • '+(listing.created||'')+'</div>'+
+                      '<div class="subtle" style="margin-top:4px;">Listing #'+(listing.listing_id||'')+' • '+(listing.created ? new Date(listing.created).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }).replace(',', '') : '')+'</div>'+
                     '</div>'+
                   '</div>'+
                   '<hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0" />'+
@@ -789,7 +984,7 @@ foreach ($sp as $p) {
                     '<div><div style="font-weight:600;">Buyer</div><div>'+fullname(buyer)+'</div><div>Email: '+(buyer.email||'')+'</div><div>Contact: '+(buyer.contact||'')+'</div></div>'+
                   '</div>'+
                 '</div>'+
-                (isCompleted ? (
+                (isCompleted || !canEditMeetup ? (
                   '<div class="card" style="padding:12px;margin-top:10px;">'+
                     '<div style="display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:8px;">'+
                       '<div><strong>Date & Time:</strong> '+(whenVal||'')+'</div>'+
@@ -895,7 +1090,7 @@ foreach ($sp as $p) {
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(currentTxMap);
                 currentTxMap.on('tileload', function(){ try{ currentTxMap.invalidateSize(); }catch(e){} });
 
-                if (!isCompleted){
+                if (canEditMeetup){
                   // Add click handler to set location
                   currentTxMap.on('click', function(e) {
                     var lat = e.latlng.lat.toFixed(6);
@@ -925,7 +1120,7 @@ foreach ($sp as $p) {
               
               var saveBtn = document.getElementById('btnSaveTx');
               var saveStatus = document.getElementById('saveStatus');
-              if (!isCompleted && saveBtn && saveStatus) {
+              if (canEditMeetup && saveBtn && saveStatus) {
                 saveBtn.addEventListener('click', function() {
                   var dateTime = document.getElementById('txDateTime').value;
                   var location = document.getElementById('txLocation').value;
@@ -977,7 +1172,7 @@ foreach ($sp as $p) {
                     });
                 });
               }
-              if (!isCompleted && isOngoing) {
+              if (canEditMeetup) {
                 var wrap = document.getElementById('sellerMeetupWrap');
                 var emptyEl = document.getElementById('sellerMeetupEmpty');
                 var table = document.getElementById('sellerMeetupTable');
@@ -1142,6 +1337,16 @@ foreach ($sp as $p) {
                     fm.querySelector('input[name="buyer_id"]').value = data.buyer_id || '';
                   }
                   openModal('batCompleteModal');
+                  // Auto-scroll to form after modal opens
+                  setTimeout(function(){
+                    var modal = document.getElementById('batCompleteModal');
+                    if (modal) {
+                      var form = document.getElementById('batCompleteForm');
+                      if (form) {
+                        form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }
+                    }
+                  }, 100);
                 });
               }
             });
@@ -1152,9 +1357,8 @@ foreach ($sp as $p) {
   <!-- Complete Transaction Modal (BAT) -->
   <div id="batCompleteModal" class="modal" style="display:none;align-items:center;justify-content:center;">
     <div class="panel" style="max-width:560px;width:100%">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+      <div style="display:flex;justify-content:center;align-items:center;gap:8px;">
         <h2 style="margin:0;">Complete Transaction</h2>
-        <button class="close-btn" data-close="batCompleteModal">Close</button>
       </div>
       <form id="batCompleteForm" style="margin-top:8px;">
         <input type="hidden" name="transaction_id" />
@@ -1170,16 +1374,17 @@ foreach ($sp as $p) {
               <label><input type="radio" name="result" value="failed" /> Failed</label>
             </div>
           </div>
-          <div>
+          <div id="batCompletePriceWrap">
             <label style="font-weight:600;">Final Price (₱)</label>
             <input type="number" name="price" step="0.01" min="0" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;" />
           </div>
-          <div>
+          <div id="batCompletePaymentWrap">
             <label style="font-weight:600;">Payment Method</label>
             <div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">
               <select id="paymentMethodSelect" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;">
                 <option value="Cash">Cash</option>
                 <option value="GCash">GCash</option>
+                <option value="Bank Transfer">Bank Transfer</option>
                 <option value="other">Other payment method</option>
               </select>
               <input type="text" id="paymentMethodOther" placeholder="Specify other payment method" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;display:none;" />
@@ -1201,6 +1406,31 @@ foreach ($sp as $p) {
       var methodSelect = document.getElementById('paymentMethodSelect');
       var methodOther = document.getElementById('paymentMethodOther');
       var methodHidden = document.getElementById('paymentMethodHidden');
+      var priceWrap = document.getElementById('batCompletePriceWrap');
+      var paymentWrap = document.getElementById('batCompletePaymentWrap');
+      var priceInput = form ? form.querySelector('input[name="price"]') : null;
+
+      function syncCompleteResultUI(){
+        if (!form) return;
+        var result = (form.querySelector('input[name="result"]:checked') || {}).value || '';
+        if (result === 'failed'){
+          if (priceWrap) priceWrap.style.display = 'none';
+          if (paymentWrap) paymentWrap.style.display = 'none';
+          if (priceInput) priceInput.value = '0';
+          if (methodHidden) methodHidden.value = 'None';
+        } else {
+          if (priceWrap) priceWrap.style.display = '';
+          if (paymentWrap) paymentWrap.style.display = '';
+        }
+      }
+
+      if (form){
+        var resultRadios = form.querySelectorAll('input[name="result"]');
+        Array.prototype.slice.call(resultRadios).forEach(function(r){
+          r.addEventListener('change', syncCompleteResultUI);
+        });
+        syncCompleteResultUI();
+      }
 
       if (methodSelect && methodOther){
         methodSelect.addEventListener('change', function(){
@@ -1217,7 +1447,6 @@ foreach ($sp as $p) {
         submitBtn.addEventListener('click', function(){
           msg.textContent = '';
           var result = (form.querySelector('input[name="result"]:checked') || {}).value || '';
-          var priceInput = form.querySelector('input[name="price"]');
           var price = priceInput ? parseFloat(priceInput.value || '0') : 0;
           var methodVal = methodSelect ? methodSelect.value : '';
           var pay = '';
@@ -1225,6 +1454,11 @@ foreach ($sp as $p) {
             pay = methodOther ? methodOther.value.toString().trim() : '';
           } else {
             pay = methodVal || '';
+          }
+          if (result === 'failed'){
+            price = 0;
+            pay = 'None';
+            if (priceInput) priceInput.value = '0';
           }
           if (result==='successful' && (isNaN(price) || price<=0 || pay==='')){
             msg.textContent = 'Please provide price and payment method for successful transactions.';
@@ -1246,7 +1480,18 @@ foreach ($sp as $p) {
                   window.location.reload();
                 }, 600);
               } else {
-                msg.textContent = 'Failed: ' + (res && res.error ? res.error : 'Unknown error'); msg.style.color = '#e53e3e';
+                var errorMsg = (res && res.error ? res.error : 'Unknown error');
+                if (res && res.detail) {
+                  var d = res.detail;
+                  try{
+                    if (typeof d === 'object') d = JSON.stringify(d);
+                  }catch(_){ }
+                  errorMsg += ' (' + d + ')';
+                }
+                if (res && res.code) {
+                  errorMsg += ' [Code: ' + res.code + ']';
+                }
+                msg.textContent = 'Failed: ' + errorMsg; msg.style.color = '#e53e3e';
               }
             })
             .catch(function(err){ submitBtn.disabled=false; submitBtn.textContent='Submit'; msg.textContent = 'Network error: '+err.message; msg.style.color = '#e53e3e'; });

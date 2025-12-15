@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $barangay = '';
   $municipality = '';
   $province = '';
-  $age = isset($_POST['age']) ? (int)$_POST['age'] : 0;
+  $age = isset($_POST['age']) ? (float)$_POST['age'] : 0.0;
   $weight = isset($_POST['weight']) ? (float)$_POST['weight'] : 0.0;
   $price = isset($_POST['price']) ? (float)$_POST['price'] : 0.0;
 
@@ -75,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       'livestock_type' => $livestock_type_name,
       'breed' => $breed_name,
       'address' => $address,
-      'age' => (int)$age,
+      'age' => (float)$age,
       'weight' => (float)$weight,
       'price' => (float)$price,
       'status' => 'Pending'
@@ -91,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'livestock_type' => $livestock_type_name,
         'breed' => $breed_name,
         'address' => $address,
-        'age' => (int)$age,
+        'age' => (float)$age,
         'weight' => (float)$weight,
         'price' => (float)$price
       ]];
@@ -146,34 +146,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           } else {
             $base = function_exists('sb_base_url') ? sb_base_url() : (getenv('SUPABASE_URL') ?: '');
             $service = function_exists('sb_env') ? (sb_env('SUPABASE_SERVICE_ROLE_KEY') ?: '') : (getenv('SUPABASE_SERVICE_ROLE_KEY') ?: '');
-            $auth = $_SESSION['supa_access_token'] ?? ($service ?: (getenv('SUPABASE_KEY') ?: ''));
+            $auth = $service ?: ($_SESSION['supa_access_token'] ?? (getenv('SUPABASE_KEY') ?: ''));
+            if (!$auth){
+              $error = 'Image upload failed: missing Supabase service role key.';
+            } else {
             $folder = ((int)$effectiveSellerId).'_'.$sanFull;
             $bucketPathPrefix = rtrim($base,'/').'/storage/v1/object/listings/underreview/'.$folder.'/';
             $idx = 1;
+            $failedUploads = [];
             foreach ($validFiles as $vf){
               $tmp = $vf['tmp'];
               $fname = $createdKey.'_'.$idx.'img.jpg';
               $pathUrl = $bucketPathPrefix.$fname;
               $mime = mime_content_type($tmp) ?: 'image/jpeg';
+              $bytes = @file_get_contents($tmp);
+              if ($bytes === false){
+                $failedUploads[] = $fname.' (failed to read uploaded file)';
+                $idx++;
+                continue;
+              }
               $ch = curl_init();
               curl_setopt_array($ch, [
                 CURLOPT_URL => $pathUrl,
                 CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_CUSTOMREQUEST => 'POST',
+                CURLOPT_CUSTOMREQUEST => 'PUT',
                 CURLOPT_HTTPHEADER => [
                   'apikey: '.(function_exists('sb_anon_key')? sb_anon_key() : (getenv('SUPABASE_KEY') ?: '')),
                   'Authorization: Bearer '.$auth,
                   'Content-Type: '.$mime,
                   'x-upsert: true'
                 ],
-                CURLOPT_POSTFIELDS => file_get_contents($tmp)
+                CURLOPT_POSTFIELDS => $bytes
               ]);
               $upRes = curl_exec($ch);
               $upCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
               $upErr = curl_error($ch);
               curl_close($ch);
-              if ($upCode>=200 && $upCode<300){ $uploadedInfo[] = $fname; }
+              if ($upCode>=200 && $upCode<300){
+                $uploadedInfo[] = $fname;
+              } else {
+                $failedUploads[] = $fname.' (HTTP '.$upCode.') '.($upErr ? $upErr : (is_string($upRes) ? $upRes : ''));
+              }
               $idx++;
+            }
+
+            if (count($failedUploads) > 0){
+              $error = 'One or more images failed to upload: '.implode(' | ', $failedUploads);
+            }
             }
           }
         }
@@ -237,8 +256,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <input type="text" name="address" value="<?php echo htmlspecialchars($_POST['address'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required />
           </div>
           <div>
-            <label>Age</label>
-            <input type="number" min="0" step="1" name="age" value="<?php echo htmlspecialchars($_POST['age'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" required />
+            <label>Age in Months</label>
+            <input type="number" min="0" step="0.01" name="age" value="<?php echo htmlspecialchars($_POST['age'] ?? '0.0', ENT_QUOTES, 'UTF-8'); ?>" required />
           </div>
           <div>
             <label>Weight (kg)</label>
