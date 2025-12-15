@@ -61,6 +61,7 @@ $soldRows = ($soldStatus>=200 && $soldStatus<300 && is_array($soldRes)) ? $soldR
             <a class="btn" href="pages/generatereports.php">Generate Reports</a>
             <a class="btn" href="pages/usermanagement.php">User Management</a>
             <a class="btn" href="pages/security.php">Security</a>
+            <a class="btn" href="pages/penalty_management.php">Penalty Management</a>
             <a class="btn" href="pages/price_management.php" style="background:#4a5568;">Price Management</a>
         </div>
         <div class="nav-right">
@@ -80,6 +81,7 @@ $soldRows = ($soldStatus>=200 && $soldStatus<300 && is_array($soldRes)) ? $soldR
         <a href="pages/generatereports.php">Generate Reports</a>
         <a href="pages/usermanagement.php">User Management</a>
         <a href="pages/security.php">Security</a>
+        <a href="pages/penalty_management.php">Penalty Management</a>
         <a href="pages/price_management.php">Price Management</a>
         <a href="../logout.php">Logout</a>
         <a href="pages/profile.php">Profile</a>

@@ -139,6 +139,66 @@ if (isset($_POST['action']) && $_POST['action']==='set_schedule'){
   echo json_encode(['ok'=>true,'warning'=> (count($warnings)? implode('; ', $warnings) : null)]); exit;
 }
 
+if (isset($_GET['action']) && $_GET['action']==='meetup_requests'){
+  header('Content-Type: application/json');
+  $txId = isset($_GET['transaction_id']) ? (int)$_GET['transaction_id'] : 0;
+  if (!$txId){ echo json_encode(['ok'=>false,'error'=>'missing_params']); exit; }
+  [$rows,$st,$err] = sb_rest('GET','meetup_request',[
+    'select'=>'transaction_id,user_id,user_role,transaction_date,transaction_location,description',
+    'transaction_id'=>'eq.'.$txId
+  ]);
+  if (!($st>=200 && $st<300) || !is_array($rows)){
+    echo json_encode(['ok'=>false,'error'=>'load_failed','code'=>$st]);
+    exit;
+  }
+  echo json_encode(['ok'=>true,'data'=>$rows]);
+  exit;
+}
+
+if (isset($_POST['action']) && $_POST['action']==='apply_meetup_request'){
+  header('Content-Type: application/json');
+  $txId = isset($_POST['transaction_id']) ? (int)$_POST['transaction_id'] : 0;
+  $listingId = isset($_POST['listing_id']) ? (int)$_POST['listing_id'] : 0;
+  $sellerId = isset($_POST['seller_id']) ? (int)$_POST['seller_id'] : 0;
+  $buyerId = isset($_POST['buyer_id']) ? (int)$_POST['buyer_id'] : 0;
+  $dt = isset($_POST['transaction_date']) ? (string)$_POST['transaction_date'] : '';
+  $loc = isset($_POST['transaction_location']) ? (string)$_POST['transaction_location'] : '';
+  if (!$txId || !$listingId || !$sellerId || !$buyerId || $dt===''){
+    echo json_encode(['ok'=>false,'error'=>'missing_params']); exit;
+  }
+  $upd = [
+    'bat_id'=>$batId,
+    'transaction_date'=>$dt,
+    'transaction_location'=>$loc,
+  ];
+  [$ur,$us,$ue] = sb_rest('PATCH','ongoingtransactions',[ 'transaction_id'=>'eq.'.$txId ], [$upd]);
+  if (!($us>=200 && $us<300)){
+    echo json_encode(['ok'=>false,'error'=>'update_failed','code'=>$us]); exit;
+  }
+  echo json_encode(['ok'=>true]);
+  exit;
+}
+
+if (isset($_POST['action']) && $_POST['action']==='deny_meetup_request'){
+  header('Content-Type: application/json');
+  $txId = isset($_POST['transaction_id']) ? (int)$_POST['transaction_id'] : 0;
+  $userId = isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0;
+  $dt = isset($_POST['transaction_date']) ? (string)$_POST['transaction_date'] : '';
+  if (!$txId || !$userId || $dt===''){
+    echo json_encode(['ok'=>false,'error'=>'missing_params']); exit;
+  }
+  [$dr,$ds,$de] = sb_rest('DELETE','meetup_request',[
+    'transaction_id'=>'eq.'.$txId,
+    'user_id'=>'eq.'.$userId,
+    'transaction_date'=>'eq.'.$dt
+  ], null, ['Prefer: return=minimal']);
+  if (!($ds>=200 && $ds<300)){
+    echo json_encode(['ok'=>false,'error'=>'delete_failed','code'=>$ds]); exit;
+  }
+  echo json_encode(['ok'=>true]);
+  exit;
+}
+
 // Inline action: complete an ongoing transaction (BAT)
 if (isset($_POST['action']) && $_POST['action']==='complete_transaction'){
   header('Content-Type: application/json');
@@ -253,6 +313,124 @@ $done = fetch_table(
   'successfultransactions(price,payment_method)',
   'completed_transaction.desc'
 );
+
+// Prepare data for service coverage map
+$coveragePins = ['activePins' => [], 'soldPins' => []];
+
+// Helper to parse location strings
+$parse_loc_pair = function($locStr) {
+    $lat = null; $lng = null;
+    if (!$locStr) { return [null, null]; }
+    $j = json_decode($locStr, true);
+    if (is_array($j)) {
+        if (isset($j['lat']) && isset($j['lng'])) {
+            return [(float)$j['lat'], (float)$j['lng']];
+        }
+        if (isset($j[0]) && isset($j[1])) {
+            return [(float)$j[0], (float)$j[1]];
+        }
+    }
+    if (strpos($locStr, ',') !== false) {
+        $parts = explode(',', $locStr, 2);
+        $lat = (float)trim($parts[0]);
+        $lng = (float)trim($parts[1]);
+        return [$lat, $lng];
+    }
+    return [null, null];
+};
+
+// Build index of active listings
+[$activeList, $alSt, $alErr] = sb_rest('GET', 'activelivestocklisting', [
+    'select' => 'listing_id,livestock_type,breed,price,address,created,seller_id',
+    'limit' => 1000
+]);
+if (!($alSt >= 200 && $alSt < 300) || !is_array($activeList)) { $activeList = []; }
+$activeIndex = [];
+foreach ($activeList as $row) {
+    $lid = (int)($row['listing_id'] ?? 0);
+    if ($lid <= 0) { continue; }
+    $activeIndex[$lid] = [
+        'type'    => $row['livestock_type'] ?? '',
+        'breed'   => $row['breed'] ?? '',
+        'price'   => $row['price'] ?? '',
+        'address' => $row['address'] ?? '',
+        'created' => $row['created'] ?? '',
+        'seller_id'=> (int)($row['seller_id'] ?? 0)
+    ];
+}
+
+// Active pins
+[$ap, $as, $ae] = sb_rest('GET', 'activelocation_pins', [
+    'select' => 'pin_id,location,listing_id,status',
+    'limit' => 1000
+]);
+if (!($as >= 200 && $as < 300) || !is_array($ap)) { $ap = []; }
+foreach ($ap as $p) {
+    $lid = (int)($p['listing_id'] ?? 0);
+    if (!isset($activeIndex[$lid])) { continue; }
+    [$la, $ln] = $parse_loc_pair($p['location'] ?? '');
+    if ($la === null || $ln === null) { continue; }
+    $meta = $activeIndex[$lid];
+    $coveragePins['activePins'][] = [
+        'pin_id'     => (int)($p['pin_id'] ?? 0),
+        'listing_id' => $lid,
+        'lat'        => (float)$la,
+        'lng'        => (float)$ln,
+        'type'       => $meta['type'],
+        'breed'      => $meta['breed'],
+        'price'      => $meta['price'],
+        'address'    => $meta['address'],
+        'created'    => $meta['created'],
+        'seller_id'  => $meta['seller_id']
+    ];
+}
+
+// Build index of sold listings
+[$soldList, $slSt, $slErr] = sb_rest('GET', 'activelivestocklisting', [
+    'select' => 'listing_id,livestock_type,breed,price,address,created,seller_id',
+    'status' => 'eq.Sold',
+    'limit' => 1000
+]);
+if (!($slSt >= 200 && $slSt < 300) || !is_array($soldList)) { $soldList = []; }
+$soldIndex = [];
+foreach ($soldList as $row) {
+    $lid = (int)($row['listing_id'] ?? 0);
+    if ($lid <= 0) { continue; }
+    $soldIndex[$lid] = [
+        'type'     => $row['livestock_type'] ?? '',
+        'breed'    => $row['breed'] ?? '',
+        'price'    => $row['price'] ?? '',
+        'address'  => $row['address'] ?? '',
+        'created'  => $row['created'] ?? '',
+        'seller_id'=> (int)($row['seller_id'] ?? 0)
+    ];
+}
+
+// Sold pins
+[$sp, $ss, $se] = sb_rest('GET', 'soldlocation_pins', [
+    'select' => 'pin_id,location,listing_id,status',
+    'limit' => 1000
+]);
+if (!($ss >= 200 && $ss < 300) || !is_array($sp)) { $sp = []; }
+foreach ($sp as $p) {
+    $lid = (int)($p['listing_id'] ?? 0);
+    if (!isset($soldIndex[$lid])) { continue; }
+    [$la, $ln] = $parse_loc_pair($p['location'] ?? '');
+    if ($la === null || $ln === null) { continue; }
+    $meta = $soldIndex[$lid];
+    $coveragePins['soldPins'][] = [
+        'pin_id'     => (int)($p['pin_id'] ?? 0),
+        'listing_id' => $lid,
+        'lat'        => (float)$la,
+        'lng'        => (float)$ln,
+        'type'       => $meta['type'],
+        'breed'      => $meta['breed'],
+        'price'      => $meta['price'],
+        'address'    => $meta['address'],
+        'created'    => $meta['created'],
+        'seller_id'  => $meta['seller_id']
+    ];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -426,6 +604,13 @@ $done = fetch_table(
       </table>
     </div>
 
+    <!-- Service Coverage Map -->
+    <div class="card section">
+      <h2 style="margin:0 0 8px 0;">Service Coverage Map</h2>
+      <div id="coverageMap" style="height:400px;border:1px solid #e5e7eb;border-radius:10px;"></div>
+      <div id="coverageStatus" style="margin-top:8px;color:#4a5568;font-size:14px"></div>
+    </div>
+
   </div>
 
   <!-- Transaction Details Modal -->
@@ -533,7 +718,7 @@ $done = fetch_table(
                         '</div>'+
                       '</div>' : '')+
                   '</div>'
-                ) : (
+                 ) : (
                   '<div class="card" style="padding:12px;margin-top:10px;">'+
                     '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">'+
                       '<div><strong>Date & Time:</strong> <input type="datetime-local" id="txDateTime" value="'+(whenVal||'')+'" style="margin-left:8px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;" /></div>'+
@@ -546,6 +731,14 @@ $done = fetch_table(
                       '<button class="btn" id="btnCompleteTx" style="background:#10b981;color:#fff;">Complete Transaction</button>'+
                       '<span id="saveStatus" style="color:#4a5568;font-size:12px;"></span>'+
                     '</div>'+
+                    '<div id="sellerMeetupWrap" style="margin-top:16px;">'+
+                      '<div style="font-weight:600;font-size:14px;margin-bottom:4px;">Seller suggested meet-ups</div>'+
+                      '<div id="sellerMeetupEmpty" class="subtle">Loading...</div>'+
+                      '<table id="sellerMeetupTable" class="table" style="display:none;font-size:12px;margin-top:4px;">'+
+                        '<thead><tr><th>Date & Time</th><th>Location</th><th>Description</th><th>Actions</th></tr></thead>'+
+                        '<tbody></tbody>'+ 
+                      '</table>'+ 
+                    '</div>'+ 
                   '</div>'
                 ));
               txBody.innerHTML = bodyHtml;
@@ -601,7 +794,6 @@ $done = fetch_table(
                 setTimeout(function(){ try{ currentTxMap.invalidateSize(); }catch(e){} }, 50);
               }, 50);
               
-              // Add save button handler only for non-completed transactions
               var saveBtn = document.getElementById('btnSaveTx');
               var saveStatus = document.getElementById('saveStatus');
               if (!isCompleted && saveBtn && saveStatus) {
@@ -655,6 +847,102 @@ $done = fetch_table(
                       saveStatus.style.color = '#e53e3e';
                     });
                 });
+              }
+              if (!isCompleted && isOngoing) {
+                var wrap = document.getElementById('sellerMeetupWrap');
+                var emptyEl = document.getElementById('sellerMeetupEmpty');
+                var table = document.getElementById('sellerMeetupTable');
+                if (wrap && emptyEl && table) {
+                  fetch('transaction_monitoring.php?action=meetup_requests&transaction_id='+(data.transaction_id||''), { credentials:'same-origin' })
+                    .then(function(r){ return r.json(); })
+                    .then(function(res){
+                      var tbody = table.querySelector('tbody');
+                      tbody.innerHTML = '';
+                      if (!res || !res.ok || !Array.isArray(res.data) || res.data.length===0) {
+                        emptyEl.textContent = 'No seller suggestions yet.';
+                        table.style.display = 'none';
+                        return;
+                      }
+                      emptyEl.textContent = '';
+                      table.style.display = '';
+                      res.data.forEach(function(row){
+                        var tr = document.createElement('tr');
+                        var dt = row.transaction_date || '';
+                        var loc = row.transaction_location || '';
+                        var desc = row.description || '';
+                        tr.innerHTML = '<td>'+dt+'</td>'+
+                          '<td>'+loc+'</td>'+
+                          '<td>'+desc+'</td>'+
+                          '<td>'+
+                            '<button class="btn btn-approve-meetup" data-user="'+(row.user_id||'')+'" data-dt="'+dt+'" data-loc="'+loc+'" style="margin-right:4px;">Approve</button>'+
+                            '<button class="btn btn-deny-meetup" data-user="'+(row.user_id||'')+'" data-dt="'+dt+'">Deny</button>'+
+                          '</td>';
+                        tbody.appendChild(tr);
+                      });
+
+                      tbody.addEventListener('click', function(ev){
+                        var t = ev.target;
+                        if (t && t.classList.contains('btn-approve-meetup')){
+                          var u = t.getAttribute('data-user')||'';
+                          var dtv = t.getAttribute('data-dt')||'';
+                          var locv = t.getAttribute('data-loc')||'';
+                          if (!dtv || !locv) return;
+                          if (!confirm('Approve this suggested meet-up and set it as the transaction meet-up details?')) return;
+                          var fd2 = new FormData();
+                          fd2.append('action','apply_meetup_request');
+                          fd2.append('transaction_id', data.transaction_id || '');
+                          fd2.append('listing_id', data.listing_id || '');
+                          fd2.append('seller_id', data.seller_id || '');
+                          fd2.append('buyer_id', data.buyer_id || '');
+                          fd2.append('transaction_date', dtv);
+                          fd2.append('transaction_location', locv);
+                          t.disabled = true;
+                          fetch('transaction_monitoring.php', { method:'POST', body: fd2, credentials:'same-origin' })
+                            .then(function(r){ return r.json(); })
+                            .then(function(rj){
+                              t.disabled = false;
+                              if (rj && rj.ok){
+                                var dtInput = document.getElementById('txDateTime');
+                                var locInput = document.getElementById('txLocation');
+                                if (dtInput) dtInput.value = dtv;
+                                if (locInput) locInput.value = locv;
+                                saveStatus.textContent = 'Approved seller suggestion and saved meet-up details.';
+                                saveStatus.style.color = '#38a169';
+                              } else {
+                                alert('Failed to apply suggestion');
+                              }
+                            })
+                            .catch(function(){ t.disabled=false; });
+                        } else if (t && t.classList.contains('btn-deny-meetup')){
+                          var u2 = t.getAttribute('data-user')||'';
+                          var dt2 = t.getAttribute('data-dt')||'';
+                          if (!u2 || !dt2) return;
+                          if (!confirm('Deny this suggested meet-up?')) return;
+                          var fd3 = new FormData();
+                          fd3.append('action','deny_meetup_request');
+                          fd3.append('transaction_id', data.transaction_id || '');
+                          fd3.append('user_id', u2);
+                          fd3.append('transaction_date', dt2);
+                          t.disabled = true;
+                          fetch('transaction_monitoring.php', { method:'POST', body: fd3, credentials:'same-origin' })
+                            .then(function(r){ return r.json(); })
+                            .then(function(rj){
+                              t.disabled = false;
+                              if (rj && rj.ok){
+                                t.closest('tr').remove();
+                                if (!table.querySelector('tbody').children.length){
+                                  emptyEl.textContent = 'No seller suggestions yet.';
+                                  table.style.display = 'none';
+                                }
+                              } else {
+                                alert('Failed to deny suggestion');
+                              }
+                            })
+                            .catch(function(){ t.disabled=false; });
+                        }
+                      });
+                    });
+                }
               }
               // Complete flow
               var completeBtn = document.getElementById('btnCompleteTx');

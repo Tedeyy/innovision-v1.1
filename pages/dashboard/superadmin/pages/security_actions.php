@@ -19,7 +19,10 @@ if ($action === 'block_ip') {
     $reason = $input['reason'] ?? '';
     $admin_id = $input['admin_id'] ?? '';
     
+    error_log("Block IP: IP=$ip_address, Reason=$reason, AdminID=$admin_id");
+    
     if (empty($ip_address) || empty($reason) || empty($admin_id)) {
+        error_log("Missing fields: IP=" . (empty($ip_address) ? 'yes' : 'no') . ", Reason=" . (empty($reason) ? 'yes' : 'no') . ", Admin=" . (empty($admin_id) ? 'yes' : 'no'));
         echo json_encode(['success' => false, 'error' => 'Missing required fields']);
         exit;
     }
@@ -30,7 +33,10 @@ if ($action === 'block_ip') {
         'ip_address' => 'eq.' . $ip_address
     ]);
     
-    if ($existingStatus >= 200 && $existingStatus < 300 && !empty($existingRows)) {
+    error_log("Existing check status: $existingStatus");
+    
+    // Check for existing IP or handle 409 conflict
+    if (($existingStatus >= 200 && $existingStatus < 300 && !empty($existingRows)) || $existingStatus === 409) {
         echo json_encode(['success' => false, 'error' => 'IP address is already blacklisted']);
         exit;
     }
@@ -39,25 +45,48 @@ if ($action === 'block_ip') {
     $blacklistData = [
         'ip_address' => $ip_address,
         'reason' => $reason,
-        'admin_id' => $admin_id
+        'admin_id' => (int)$admin_id
     ];
     
-    [$result, $status, $error] = sb_rest('POST', 'blacklist', [], [$blacklistData]);
+    error_log("Sending: " . json_encode($blacklistData));
+    
+    [$result, $status, $error] = sb_rest('POST', 'blacklist', [], $blacklistData);
+    
+    error_log("Response: status=$status, error=$error");
+    
+    if ($status >= 200 && $status < 300) {
+        echo json_encode(['success' => true, 'message' => 'IP address blocked successfully']);
+    } elseif ($status === 409) {
+        echo json_encode(['success' => false, 'error' => 'IP address is already blacklisted']);
+    } else {
+        echo json_encode(['success' => false, 'error' => "Status: $status, Error: $error"]);
+    }
+    
+} elseif ($action === 'unblock_ip') {
+    $blockId = $input['block_id'] ?? 0;
+    $ipAddress = $input['ip_address'] ?? '';
+    
+    if (empty($blockId) || empty($ipAddress)) {
+        echo json_encode(['success' => false, 'error' => 'Missing required fields']);
+        exit;
+    }
+    
+    // Delete from blacklist table
+    [$result, $status, $error] = sb_rest('DELETE', 'blacklist', ['block_id' => 'eq.' . $blockId]);
     
     if ($status >= 200 && $status < 300) {
         // Log the action
-        $purpose = "IP Address Blocked: " . $ip_address . " | Reason: " . $reason;
+        $purpose = "IP Address Unblocked: " . $ipAddress;
         
-        // Create a simple log function if use_case_logger is not available
         if (function_exists('log_use_case')) {
             log_use_case($purpose);
         } else {
             error_log("Security Action: " . $purpose);
         }
         
-        echo json_encode(['success' => true, 'message' => 'IP address blocked successfully']);
+        echo json_encode(['success' => true, 'message' => 'IP address unblocked successfully']);
     } else {
-        echo json_encode(['success' => false, 'error' => $error ?? 'Failed to block IP address']);
+        echo json_encode(['success' => false, 'error' => $error ?? 'Failed to unblock IP address']);
     }
     
 } else {

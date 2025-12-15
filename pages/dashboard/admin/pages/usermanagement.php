@@ -16,82 +16,20 @@ if (isset($_GET['doc']) && $_GET['doc'] === '1'){
   $email = $_GET['email'] ?? '';
   if (!in_array($role, ['buyer','seller','bat'], true)) { echo json_encode(['ok'=>false,'error'=>'invalid role']); exit; }
   if ($fname==='' || $lname===''){ echo json_encode(['ok'=>false,'error'=>'missing fields']); exit; }
+  // Build sanitized fullname and direct public URL in reviewusers bucket
   $fullname = trim($fname.' '.($mname?:'').' '.$lname);
   $san = strtolower(preg_replace('/[^a-z0-9]+/i','_', $fullname));
   $san = trim($san, '_');
-  $esan = strtolower(preg_replace('/[^a-z0-9]+/i','_', $email));
-  $esan = trim($esan, '_');
-  $expectedNameBase = ($san !== '' ? $san : 'user'); // newest pattern: fullname only
-  $expectedEmailBase = ($san !== '' ? $san : 'user').'_'.$esan; // fallback pattern
-  // Prepare legacy created-based base as fallback
-  $createdStr = preg_replace('/[^0-9]/','', $created);
-  if ($createdStr==='') { $t=strtotime($created); $createdStr = $t? date('YmdHis',$t) : ''; }
-  $expectedCreatedBase = ($san !== '' ? $san : 'user').'_'.$createdStr;
+  $fileBase = ($san !== '' ? $san : 'user');
   $base = function_exists('sb_base_url') ? sb_base_url() : (getenv('SUPABASE_URL') ?: '');
-  $key = function_exists('sb_env') ? (sb_env('SUPABASE_SERVICE_ROLE_KEY') ?: '') : (getenv('SUPABASE_SERVICE_ROLE_KEY') ?: (getenv('SUPABASE_KEY') ?: ''));
-  // List objects under folder
-  $listPrefix = $role.'/';
-  $listUrl = rtrim($base,'/').'/storage/v1/object/list/reviewusers';
-  $ch = curl_init();
-  curl_setopt_array($ch, [
-    CURLOPT_URL => $listUrl,
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_POST => true,
-    CURLOPT_CONNECTTIMEOUT => 10,
-    CURLOPT_TIMEOUT => 25,
-    CURLOPT_HTTPHEADER => [ 'apikey: '.$key, 'Authorization: Bearer '.$key, 'Content-Type: application/json' ],
-    CURLOPT_POSTFIELDS => json_encode(['prefix' => $listPrefix])
-  ]);
-  $listRaw = curl_exec($ch);
-  $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  curl_close($ch);
-  if (!($http>=200 && $http<300)) { echo json_encode(['ok'=>false,'error'=>'list http '.$http]); exit; }
-  $items = json_decode($listRaw, true);
-  if (!is_array($items)) { echo json_encode(['ok'=>false,'error'=>'bad list']); exit; }
-  $objectName = null;
-  // Prefer exact fullname (without extension) match
-  foreach ($items as $it){
-    $name = $it['name'] ?? '';
-    if ($name==='') continue;
-    $noext = pathinfo($name, PATHINFO_FILENAME);
-    if ($noext === $expectedNameBase){ $objectName = $listPrefix.$name; break; }
+  if ($base === ''){
+    echo json_encode(['ok'=>false,'error'=>'no_base_url']);
+    exit;
   }
-  // Fallback: email-based filenames
-  if (!$objectName && $esan !== ''){
-    foreach ($items as $it){
-      $name = $it['name'] ?? '';
-      if ($name!=='' && strpos($name, $expectedEmailBase) === 0){ $objectName = $listPrefix.$name; break; }
-    }
-  }
-  // Fallback: legacy created-based filenames
-  if (!$objectName && $createdStr !== ''){
-    foreach ($items as $it){
-      $name = $it['name'] ?? '';
-      if ($name!=='' && strpos($name, $expectedCreatedBase) === 0){ $objectName = $listPrefix.$name; break; }
-    }
-  }
-  if (!$objectName){ echo json_encode(['ok'=>false,'error'=>'not found']); exit; }
-  // Sign URL
-  $signUrl = rtrim($base,'/').'/storage/v1/object/sign/reviewusers/'.rawurlencode($objectName);
-  $signBody = json_encode(['expiresIn'=>300]);
-  $ch2 = curl_init();
-  curl_setopt_array($ch2,[
-    CURLOPT_URL => $signUrl,
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_POST => true,
-    CURLOPT_CONNECTTIMEOUT => 10,
-    CURLOPT_TIMEOUT => 25,
-    CURLOPT_HTTPHEADER => [ 'apikey: '.$key, 'Authorization: Bearer '.$key, 'Content-Type: application/json' ],
-    CURLOPT_POSTFIELDS => $signBody
-  ]);
-  $signRaw = curl_exec($ch2);
-  $http2 = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
-  curl_close($ch2);
-  if (!($http2>=200 && $http2<300)) { echo json_encode(['ok'=>false,'error'=>'sign http '.$http2]); exit; }
-  $sign = json_decode($signRaw, true);
-  $signedUrl = isset($sign['signedURL']) ? $sign['signedURL'] : (isset($sign['signedUrl'])?$sign['signedUrl']:null);
-  if (!$signedUrl){ echo json_encode(['ok'=>false,'error'=>'no signed url']); exit; }
-  echo json_encode(['ok'=>true,'url'=> rtrim($base,'/').$signedUrl, 'name'=>$objectName]);
+  // Expected pattern:
+  // <SUPABASE_URL>/storage/v1/object/public/reviewusers/<role>/<fullname>.jpg
+  $publicUrl = rtrim($base,'/').'/storage/v1/object/public/reviewusers/'.rawurlencode($role).'/'.rawurlencode($fileBase).'.jpg';
+  echo json_encode(['ok'=>true,'url'=>$publicUrl]);
   exit;
 }
 

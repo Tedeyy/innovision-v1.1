@@ -556,19 +556,6 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
       $tx['meetup_location'] = $tx['transaction_location'] ?? null;
       
       // Flag if a meetup_request already exists for this transaction (for this seller)
-    $txIdLocal = isset($tx['transaction_id']) ? (int)$tx['transaction_id'] : 0;
-    $tx['has_meetup_request'] = false;
-    if ($txIdLocal > 0) {
-      [$mrRows,$mrSt,$mrErr] = sb_rest('GET','meetup_request',[
-        'select'        => 'request_id',
-        'transaction_id'=> 'eq.'.$txIdLocal,
-        'user_id'       => 'eq.'.$userId,
-        'user_role'     => 'eq.Seller',
-        'limit'         => 1
-      ]);
-      if ($mrSt>=200 && $mrSt<300 && is_array($mrRows) && !empty($mrRows)){
-        $tx['has_meetup_request'] = true;
-      }
     }
       // Add BAT fullname
       if (isset($tx['bat'])) {
@@ -924,7 +911,7 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
                 '<td>'+ fullname(buyer) +'</td>'+
                 '<td>'+(listing.livestock_type||'')+' • '+(listing.breed||'')+'</td>'+
                 '<td>'+ statusBadge(row.status) +'</td>'+
-                '<td>'+ formatStarted(row.started_at||'') +'</td>'+
+                '<td>'+ (row.started_at ? new Date(row.started_at).toLocaleString('en-GB', {hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric'}).replace(',', '') : '') +'</td>'+
                 '<td><button class="btn btn-show" data-row="'+encodeURIComponent(JSON.stringify(row))+'">Show</button></td>';
               tb.appendChild(tr);
             });
@@ -1185,7 +1172,7 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
             '</div>'+
             meetupInfo+
             '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">'+
-              '<button class="btn" id="btnSuggestMeetup"'+(hasMeetupReq?' disabled style="opacity:.6;cursor:not-allowed;"':'')+'>'+(hasMeetupReq?'Meet-Up Suggested':'Suggest Meet-Up')+'</button>'+ 
+              '<button class="btn" id="btnSuggestMeetup"'+'>'+'</button>'+ 
               '<button class="btn" id="btnSetMeetup">Set Meet-Up</button>'+ 
               '<button class="btn" id="btnConfirmShow">Confirm Attendance</button>'+ 
               '<button class="btn" id="btnRateBuyer">Rate Buyer</button>'+ 
@@ -1202,7 +1189,7 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
               im.alt = 'listing';
               im.style.width = '160px';
               im.style.height = '160px';
-              im.style.objectFit = 'cover';
+              im.style.objectFit = 'cover'
               im.style.border = '1px solid #e2e8f0';
               im.style.borderRadius = '8px';
               im.style.marginRight = '6px';

@@ -88,6 +88,92 @@ if (isset($_POST['action']) && $_POST['action']==='rate_seller'){
   exit;
 }
 
+// Handle buyer confirm attendance
+if (isset($_POST['action']) && $_POST['action']==='confirm_attendance'){
+  header('Content-Type: application/json');
+  $txId = (int)($_POST['transaction_id'] ?? 0);
+  $buyerIdIn = (int)($_POST['buyer_id'] ?? 0);
+  $sellerId = (int)($_POST['seller_id'] ?? 0);
+  
+  if ($buyerIdIn !== $buyerId || $txId<=0 || $sellerId<=0){
+    echo json_encode(['ok'=>false,'error'=>'invalid_params']);
+    exit;
+  }
+  
+  // Check if a confirmation row already exists for this buyer + transaction
+  [$rows,$st,$err] = sb_rest('GET','show_confirmation',[
+    'select'=>'confirmation_id',
+    'transaction_id'=>'eq.'.$txId,
+    'buyer_id'=>'eq.'.$buyerIdIn,
+    'limit'=>1
+  ]);
+  if (!($st>=200 && $st<300) || !is_array($rows)) $rows = [];
+  
+  $now = date('Y-m-d H:i:s');
+  
+  if (!empty($rows) && isset($rows[0]['confirmation_id'])){
+    // Update existing row
+    [$uRes,$uSt,$uErr] = sb_rest('PATCH','show_confirmation',[
+      'transaction_id'=>'eq.'.$txId,
+      'buyer_id'=>'eq.'.$buyerIdIn
+    ],[
+      'confirm_buyer'=>'Confirm',
+      'confirmed_buyer'=>$now
+    ]);
+    if (!($uSt>=200 && $uSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'update_failed','code'=>$uSt]);
+      exit;
+    }
+  } else {
+    // Insert new row
+    $payload = [[
+      'transaction_id'=>$txId,
+      'seller_id'=>$sellerId,
+      'buyer_id'=>$buyerIdIn,
+      'confirm_buyer'=>'Confirm',
+      'confirmed_buyer'=>$now
+    ]];
+    [$iRes,$iSt,$iErr] = sb_rest('POST','show_confirmation',[], $payload, ['Prefer: return=minimal']);
+    if (!($iSt>=200 && $iSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'insert_failed','code'=>$iSt]);
+      exit;
+    }
+  }
+  echo json_encode(['ok'=>true]);
+  exit;
+}
+
+// Handle checking confirmation status
+if (isset($_GET['action']) && $_GET['action']==='check_confirmation'){
+  header('Content-Type: application/json');
+  $txId = (int)($_GET['transaction_id'] ?? 0);
+  $buyerIdIn = (int)($_GET['buyer_id'] ?? 0);
+  
+  if ($buyerIdIn !== $buyerId || $txId<=0){
+    echo json_encode(['ok'=>false,'error'=>'invalid_params']);
+    exit;
+  }
+  
+  [$rows,$st,$err] = sb_rest('GET','show_confirmation',[
+    'select'=>'confirm_buyer,confirmed_buyer',
+    'transaction_id'=>'eq.'.$txId,
+    'buyer_id'=>'eq.'.$buyerIdIn,
+    'limit'=>1
+  ]);
+  if (!($st>=200 && $st<300) || !is_array($rows)) $rows = [];
+  
+  if (!empty($rows) && isset($rows[0]['confirm_buyer']) && $rows[0]['confirm_buyer'] === 'Confirm'){
+    echo json_encode([
+      'ok'=>true,
+      'confirmed'=>true,
+      'confirmed_at'=>$rows[0]['confirmed_buyer'] ?? null
+    ]);
+  } else {
+    echo json_encode(['ok'=>true,'confirmed'=>false]);
+  }
+  exit;
+}
+
 if (isset($_GET['action']) && $_GET['action']==='list'){
   header('Content-Type: application/json');
   // Fetch from three tables where current user is the buyer
@@ -193,6 +279,99 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
     .badge-ongoing{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
     .badge-completed{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
     .badge-default{background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}
+    
+    /* Mobile responsive styles */
+    @media (max-width: 768px) {
+      .panel {
+        width: 98vw;
+        max-height: 95vh;
+        padding: 12px;
+        margin: 10px;
+      }
+      .table {
+        font-size: 12px;
+      }
+      .table th, .table td {
+        padding: 4px;
+      }
+      .btn {
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+      h1, h2, h3 {
+        font-size: 14px;
+      }
+      .subtle {
+        font-size: 10px;
+      }
+      img[style*="width: 160px"] {
+        width: 80px !important;
+        height: 80px !important;
+      }
+      #txMap {
+        height: 150px !important;
+      }
+      .modal h2 {
+        font-size: 16px;
+      }
+      .modal h3 {
+        font-size: 14px;
+      }
+      textarea, input[type="text"] {
+        font-size: 12px;
+        padding: 6px;
+      }
+      #rateStars {
+        font-size: 20px !important;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .panel {
+        width: 100vw;
+        height: 100vh;
+        max-height: 100vh;
+        border-radius: 0;
+        margin: 0;
+        padding: 8px;
+      }
+      .table {
+        font-size: 10px;
+      }
+      .table th, .table td {
+        padding: 2px;
+      }
+      .btn {
+        padding: 4px 6px;
+        font-size: 10px;
+      }
+      h1 {
+        font-size: 12px;
+      }
+      h2 {
+        font-size: 14px;
+      }
+      h3 {
+        font-size: 12px;
+      }
+      .subtle {
+        font-size: 8px;
+      }
+      img[style*="width: 160px"] {
+        width: 60px !important;
+        height: 60px !important;
+      }
+      #txMap {
+        height: 120px !important;
+      }
+      textarea, input[type="text"] {
+        font-size: 10px;
+        padding: 4px;
+      }
+      #rateStars {
+        font-size: 16px !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -233,7 +412,6 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
       <table class="table" id="txTable">
         <thead>
           <tr>
-            <th>Tx ID</th>
             <th>Seller</th>
             <th>Listing</th>
             <th>Status</th>
@@ -305,11 +483,10 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
             (res.data||[]).forEach(function(row){
               var seller = row.seller||{}; var listing = row.listing||{};
               var tr = document.createElement('tr');
-              tr.innerHTML = '<td>'+ (row.transaction_id||'') +'</td>'+
-                '<td>'+ fullname(seller) +'</td>'+
+              tr.innerHTML = '<td>'+ fullname(seller) +'</td>'+
                 '<td>'+(listing.livestock_type||'')+' • '+(listing.breed||'')+'</td>'+
                 '<td>'+ statusBadge(row.status) +'</td>'+
-                '<td>'+(row.started_at||'')+'</td>'+
+                '<td>'+ (row.started_at ? new Date(row.started_at).toLocaleString('en-GB', {hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric'}).replace(',', '') : '') +'</td>'+
                 '<td><button class="btn btn-show" data-row="'+encodeURIComponent(JSON.stringify(row))+'">Show</button></td>';
               tb.appendChild(tr);
             });
@@ -348,7 +525,9 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
             '</div>'+
             '<div id="buyerViolations" class="subtle" style="margin:6px 0 0 50px;">&nbsp;</div>'+
             // actions if completed
-            ((String(data.status||'').toLowerCase()==='completed') ? '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn" id="btnRateSeller">Rate Seller</button><button class="btn" id="btnReportSeller" style="background:#ef4444;color:#fff;">Report Seller</button></div>' : '');
+            ((String(data.status||'').toLowerCase()==='completed') ? '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn" id="btnRateSeller">Rate Seller</button><button class="btn" id="btnReportSeller" style="background:#ef4444;color:#fff;">Report Seller</button></div>' : '') +
+            // confirm attendance button for ongoing transactions with date, time, and location
+            ((String(data.status||'').toLowerCase()==='ongoing' && data.meetup_date && data.meetup_time && data.meetup_location) ? '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn" id="btnConfirmAttendance" style="background:#10b981;color:#fff;">Confirm Attendance</button></div>' : '');
           var wrap = document.getElementById('imgWrap'); if (wrap) wrap.appendChild(img);
           setTimeout(function(){
             var mEl = document.getElementById('txMap'); if (!mEl || !window.L) return;
@@ -360,6 +539,28 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
             }
           }, 0);
           openModal('txModal');
+          
+          // Check confirmation status for ongoing transactions
+          if (String(data.status||'').toLowerCase()==='ongoing' && data.meetup_date && data.meetup_time && data.meetup_location) {
+            try {
+              fetch('transactions.php?action=check_confirmation&transaction_id=' + encodeURIComponent(data.transaction_id||'') + '&buyer_id=' + encodeURIComponent(data.buyer_id||''), { credentials:'same-origin' })
+                .then(function(r){ return r.json(); })
+                .then(function(res){
+                  var cab = document.getElementById('btnConfirmAttendance');
+                  if (cab && res && res.ok && res.confirmed) {
+                    cab.textContent = 'Already Confirmed';
+                    cab.style.background = '#6b7280';
+                    cab.style.color = '#fff';
+                    cab.disabled = true;
+                    if (res.confirmed_at) {
+                      cab.title = 'Confirmed on ' + new Date(res.confirmed_at).toLocaleString();
+                    }
+                  }
+                })
+                .catch(function(){});
+            } catch(e){}
+          }
+          
           // Load violation counters
           try {
             var sv = document.getElementById('sellerViolations'); if (sv){ sv.textContent = 'Checking violations...'; sv.style.color = '#6b7280'; }
@@ -391,6 +592,53 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
             rpb.addEventListener('click', function(){
               document.getElementById('repSellerId').value = String(data.seller_id||'');
               openModal('reportModal');
+            });
+          }
+          // Confirm attendance button handler
+          var cab = document.getElementById('btnConfirmAttendance');
+          if (cab){
+            cab.addEventListener('click', function(){
+              if (confirm('Are you sure you want to confirm your attendance for this transaction?')){
+                var fd = new FormData();
+                fd.append('action','confirm_attendance');
+                fd.append('transaction_id', String(data.transaction_id||''));
+                fd.append('buyer_id', String(data.buyer_id||''));
+                fd.append('seller_id', String(data.seller_id||''));
+                cab.disabled = true; 
+                cab.textContent = 'Confirming...';
+                cab.style.opacity = '0.7';
+                fetch('transactions.php', { method:'POST', body: fd, credentials:'same-origin' })
+                  .then(function(r){ 
+                    if (!r.ok) throw new Error('Network response was not ok');
+                    return r.json(); 
+                  })
+                  .then(function(res){
+                    cab.disabled = false; 
+                    cab.style.opacity = '1';
+                    if (res && res.ok){
+                      cab.textContent = 'Confirmed!';
+                      cab.style.background = '#059669';
+                      cab.style.color = '#fff';
+                      setTimeout(function(){ 
+                        closeModal('txModal'); 
+                        load(); 
+                      }, 1500);
+                    } else {
+                      cab.textContent = 'Confirm Attendance';
+                      cab.style.background = '#10b981';
+                      cab.style.color = '#fff';
+                      alert('Failed to confirm attendance: ' + (res && res.error ? res.error : 'Unknown error'));
+                    }
+                  })
+                  .catch(function(err){ 
+                    cab.disabled = false; 
+                    cab.textContent = 'Confirm Attendance';
+                    cab.style.background = '#10b981';
+                    cab.style.color = '#fff';
+                    cab.style.opacity = '1';
+                    alert('Network error: ' + err.message);
+                  });
+              }
             });
           }
         }

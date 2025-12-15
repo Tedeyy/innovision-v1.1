@@ -42,7 +42,19 @@
       if (u.match(/\.(pdf)(\?|$)/i)){
         var a = document.createElement('a'); a.href=u; a.textContent='Open document'; a.target='_blank'; if (box) box.appendChild(a);
       } else {
-        var img = document.createElement('img'); img.src = u; img.alt='Supporting document'; img.style.maxWidth='100%'; img.style.border='1px solid #e5e7eb'; img.style.borderRadius='8px'; if (box) box.appendChild(img);
+        var img = document.createElement('img');
+        img.src = u;
+        img.alt = 'Supporting document';
+        img.style.maxWidth = '400px';
+        img.style.maxHeight = '400px';
+        img.style.width = 'auto';
+        img.style.height = 'auto';
+        img.style.objectFit = 'contain';
+        img.style.display = 'block';
+        img.style.margin = '0 auto';
+        img.style.border = '1px solid #e5e7eb';
+        img.style.borderRadius = '8px';
+        if (box) box.appendChild(img);
       }
     }).catch(function(){ if (s) s.textContent='Failed to load document.'; });
   }

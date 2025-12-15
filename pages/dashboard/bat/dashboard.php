@@ -528,14 +528,18 @@ $breedData = array_values($breedCounts);
       })();
     </script>
     <div id="modal" style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:10000;">
-      <div style="background:#fff;border-radius:10px;min-width:300px;max-width:90vw;padding:16px;">
+      <div style="background:#fff;border-radius:10px;min-width:320px;max-width:95vw;padding:16px;">
         <h3 id="modal-title" style="margin-top:0">Add Schedule</h3>
         <form id="modal-form">
           <div style="display:grid;grid-template-columns:1fr;gap:8px;">
             <label>Title<input type="text" name="title" required /></label>
-            <label>Description<input type="text" name="description" required /></label>
+            <label>Description<textarea name="description" rows="3" style="width:100%;resize:vertical;min-height:70px;" required></textarea></label>
             <label>Date<input type="date" name="date" required /></label>
             <label>Time<input type="time" name="time" required /></label>
+          </div>
+          <div id="scheduleMapWrap" style="margin-top:12px;display:none;">
+            <div style="font-weight:600;font-size:14px;margin-bottom:4px;">Location Map</div>
+            <div id="scheduleMap" style="height:220px;border:1px solid #e5e7eb;border-radius:8px;"></div>
           </div>
           <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
             <button type="button" class="btn" id="modal-cancel" style="background:#718096;">Cancel</button>
@@ -548,6 +552,43 @@ $breedData = array_values($breedCounts);
       (function(){
         var calEl = document.getElementById('calendar');
         if (!calEl) return;
+        var scheduleMap = null;
+        var scheduleMarker = null;
+
+        function destroyScheduleMap(){
+          try{ if (scheduleMap){ scheduleMap.remove(); } }catch(e){}
+          scheduleMap = null; scheduleMarker = null;
+        }
+
+        function extractLatLngFromText(text){
+          if (!text) return null;
+          var m = text.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+          if (!m) return null;
+          var lat = parseFloat(m[1]);
+          var lng = parseFloat(m[2]);
+          if (isNaN(lat) || isNaN(lng)) return null;
+          if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+          return { lat: lat, lng: lng };
+        }
+
+        function updateScheduleMap(desc){
+          var wrap = document.getElementById('scheduleMapWrap');
+          var mapEl = document.getElementById('scheduleMap');
+          if (!wrap || !mapEl) return;
+          var coords = extractLatLngFromText(desc || '');
+          if (!coords){
+            wrap.style.display = 'none';
+            destroyScheduleMap();
+            return;
+          }
+          wrap.style.display = 'block';
+          if (!window.L) return;
+          destroyScheduleMap();
+          scheduleMap = L.map(mapEl).setView([coords.lat, coords.lng], 14);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(scheduleMap);
+          scheduleMarker = L.marker([coords.lat, coords.lng]).addTo(scheduleMap);
+          setTimeout(function(){ try{ scheduleMap.invalidateSize(); }catch(e){} }, 0);
+        }
         var calendar = new FullCalendar.Calendar(calEl, {
           initialView: 'dayGridMonth',
           selectable: true,
@@ -588,6 +629,9 @@ $breedData = array_values($breedCounts);
             if (form.date) form.date.value = values.date || '';
             if (form.time) form.time.value = values.time || '';
           }
+          // Update map based on description (if it contains lat,lng)
+          var descVal = (values && values.description) ? values.description : '';
+          updateScheduleMap(descVal);
           modal.style.display = 'flex';
         }
         function closeModal(){ var m=document.getElementById('modal'); if (m) m.style.display='none'; }

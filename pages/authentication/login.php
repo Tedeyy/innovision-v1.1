@@ -281,6 +281,86 @@ if ($loginAttempts >= 3) {
     }
 }
 
+// Check blacklist IP restriction
+function is_ip_blacklisted($baseUrl, $apiKey, $ip) {
+    $url = "$baseUrl/rest/v1/blacklist?select=*&ip_address=eq." . urlencode($ip) . "&limit=1";
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            'apikey: ' . $apiKey,
+            'Authorization: Bearer ' . $apiKey,
+            'Accept: application/json'
+        ],
+        CURLOPT_TIMEOUT => 5
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($httpCode >= 200 && $httpCode < 300) {
+        $data = json_decode($response, true);
+        return is_array($data) && !empty($data);
+    }
+    return false;
+}
+
+// Check penalty restriction for user
+function check_user_penalty($baseUrl, $apiKey, $userId, $userRole) {
+    $url = "$baseUrl/rest/v1/penalty?select=*&user_id=eq." . urlencode($userId) . "&order=penaltytime.desc&limit=1";
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            'apikey: ' . $apiKey,
+            'Authorization: Bearer ' . $apiKey,
+            'Accept: application/json'
+        ],
+        CURLOPT_TIMEOUT => 5
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($httpCode >= 200 && $httpCode < 300) {
+        $data = json_decode($response, true);
+        if (is_array($data) && !empty($data)) {
+            $penalty = $data[0];
+            $penaltyTime = strtotime($penalty['penaltytime']);
+            $currentTime = time();
+            
+            if ($penaltyTime > $currentTime) {
+                $remainingTime = $penaltyTime - $currentTime;
+                $days = floor($remainingTime / 86400);
+                $hours = floor(($remainingTime % 86400) / 3600);
+                $minutes = floor(($remainingTime % 3600) / 60);
+                
+                $timeString = '';
+                if ($days > 0) $timeString .= $days . ' days ';
+                if ($hours > 0) $timeString .= $hours . ' hours ';
+                if ($minutes > 0 || $timeString === '') $timeString .= $minutes . ' minutes';
+                
+                return [
+                    'blocked' => true,
+                    'message' => "Your account is penalized. You still have $timeString remaining.",
+                    'penalty' => $penalty
+                ];
+            }
+        }
+    }
+    return ['blocked' => false];
+}
+
+// Check if IP is blacklisted
+if (is_ip_blacklisted($SUPABASE_URL, $SUPABASE_KEY, $ip)) {
+    insert_suspicious_log($SUPABASE_URL, $SUPABASE_KEY, $username, $ip, 'Login attempt from blacklisted IP');
+    redirect_with_error('Access from this IP address is blocked. Please contact support if you believe this is an error.');
+}
+
 // Define user groups with priority order
 $groups = [
     'superadmin' => ['superadmin'],
@@ -358,9 +438,17 @@ if (empty($storedHash) || !password_verify($password, $storedHash)) {
     }
 }
 
-// Successful login - prepare session
+// Check penalty after successful authentication
 $userId = isset($found['user_id']) ? (int)$found['user_id'] : null;
+if ($userId !== null) {
+    $penaltyCheck = check_user_penalty($SUPABASE_URL, $SUPABASE_KEY, $userId, $role);
+    if ($penaltyCheck['blocked']) {
+        insert_suspicious_log($SUPABASE_URL, $SUPABASE_KEY, $username, $ip, 'Login attempt by penalized user');
+        redirect_with_error($penaltyCheck['message']);
+    }
+}
 
+// Successful login - prepare session
 // Clear any existing session data to prevent session fixation
 $_SESSION = [];
 

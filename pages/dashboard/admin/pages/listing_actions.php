@@ -149,22 +149,6 @@ for ($i=1; $i<=3; $i++){
   }
 }
 
-// If approving and no images were moved at all, block approval with detailed error
-if ($action === 'approve' && $imageMovedCount === 0){
-  $parts = [];
-  if (!empty($imageMissingIdx)) { $parts[] = 'Missing: '.implode(',', $imageMissingIdx); }
-  if (!empty($imageFailedIdx)) {
-    $failWithCodes = array_map(function($i) use ($imageFailedCodes){
-      $code = isset($imageFailedCodes[$i]) ? (string)$imageFailedCodes[$i] : '?';
-      return $i.'('.$code.')';
-    }, $imageFailedIdx);
-    $parts[] = 'Failed: '.implode(',', $failWithCodes);
-  }
-  $_SESSION['flash_error'] = 'Approval blocked: no images could be moved. '.(!empty($parts)? ('Details: '.implode(' | ', $parts)) : '');
-  header('Location: listingmanagement.php');
-  exit;
-}
-
 if ($action === 'approve'){
   $errors = [];
   $notices = [];

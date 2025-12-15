@@ -1,14 +1,15 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../../authentication/lib/supabase_client.php';
-// Fetch data from Supabase
+// Fetch data from Supabase - limit entries for mobile performance
 function sa_get($table, $params){
   [$rows,$st,$err] = sb_rest('GET',$table,$params);
   return ($st>=200 && $st<300 && is_array($rows)) ? $rows : [];
 }
-$suspicious = sa_get('suspicious_login_attempts', ['select'=>'slogin_id,username,ip_address,incident_report,log_time','order'=>'log_time.desc']);
-$blacklist  = sa_get('blacklist', ['select'=>'block_id,ip_address,reason,admin_id,blocked_at','order'=>'blocked_at.desc']);
-$loginlogs  = sa_get('login_logs', ['select'=>'login_id,user_id,ip_address,log_time','order'=>'log_time.desc','limit'=>'50']);
+// Limit initial entries for better mobile performance
+$suspicious = sa_get('suspicious_login_attempts', ['select'=>'slogin_id,username,ip_address,incident_report,log_time','order'=>'log_time.desc','limit'=>'0']);
+$blacklist  = sa_get('blacklist', ['select'=>'block_id,ip_address,reason,admin_id,blocked_at','order'=>'blocked_at.desc','limit'=>'0']);
+$loginlogs  = sa_get('login_logs', ['select'=>'login_id,user_id,ip_address,log_time','order'=>'log_time.desc','limit'=>'0']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -65,7 +66,40 @@ $loginlogs  = sa_get('login_logs', ['select'=>'login_id,user_id,ip_address,log_t
     }
     .table-container {
       overflow-x: auto;
+      overflow-y: auto;
       margin-top: 15px;
+      max-height: 300px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+    }
+    .scrollable-table {
+      height: 300px;
+      overflow-y: auto;
+    }
+    .load-more-btn {
+      background: #3b82f6;
+      color: white;
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .load-more-btn:hover {
+      background: #2563eb;
+    }
+    .btn-unblock {
+      background: #10b981;
+      color: white;
+      padding: 4px 8px;
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-unblock:hover {
+      background: #059669;
     }
     .status-badge {
       display: inline-block;
@@ -78,17 +112,30 @@ $loginlogs  = sa_get('login_logs', ['select'=>'login_id,user_id,ip_address,log_t
     .status-blocked { background: #fee2e2; color: #991b1b; }
     .status-active { background: #d1fae5; color: #065f46; }
     @media (max-width:640px){
-      .security-table{font-size:12px}
-      .security-table th{padding:8px 10px}
-      .security-table td{padding:8px 10px}
-      .table-container{margin-top:10px}
-      .btn-block{padding:6px 10px;font-size:12px;border-radius:6px}
-      .status-badge{padding:2px 6px;font-size:11px}
-      #status{grid-template-columns:1fr !important;gap:8px}
-      .navbar{padding:8px 10px}
-      .wrap .card{padding:12px}
+      body{font-size:11px}
+      .wrap{font-size:11px;padding:8px}
+      .card{padding:8px;margin-bottom:8px}
+      h3{font-size:14px;margin-bottom:8px}
+      .security-table{font-size:10px;table-layout:fixed;word-wrap:break-word}
+      .security-table th{padding:4px 6px;font-size:10px}
+      .security-table td{padding:4px 6px;font-size:10px}
+      .table-container{margin-top:8px;max-height:200px}
+      .btn-block{padding:4px 8px;font-size:10px;border-radius:4px;margin-top:6px}
+      .status-badge{padding:1px 4px;font-size:9px}
+      #status{grid-template-columns:1fr !important;gap:6px}
+      .navbar{padding:6px 8px}
+      .wrap .card{padding:8px}
       /* Make wide tables fit */
       #events, .security-table{table-layout:fixed;word-wrap:break-word}
+      .table-container{border:1px solid #e5e7eb;border-radius:4px}
+      /* Mobile back button styling */
+      .mobile-back{display:none}
+      .nav-right{display:none}
+    }
+    @media (max-width:640px){
+      .mobile-back{display:block;position:absolute;left:8px;top:10%;transform:translateY(-50%)}
+      .mobile-back .btn{padding:4px 8px;font-size:12px;background:#3b82f6}
+      .nav-left{justify-content:center}
     }
   </style>
 </head>
@@ -99,6 +146,10 @@ $loginlogs  = sa_get('login_logs', ['select'=>'login_id,user_id,ip_address,log_t
     </div>
     <div class="nav-right">
       <a class="btn" href="../dashboard.php">Back to Dashboard</a>
+    </div>
+    <!-- Mobile Back Button -->
+    <div class="mobile-back">
+      <a class="btn" href="../dashboard.php">← Back</a>
     </div>
   </nav>
   <div class="wrap">
@@ -121,7 +172,7 @@ $loginlogs  = sa_get('login_logs', ['select'=>'login_id,user_id,ip_address,log_t
             </tr>
           </thead>
           <tbody>
-            <?php if (is_array($suspicious)):
+            <?php if (is_array($suspicious) && count($suspicious) > 0):
               foreach ($suspicious as $row): ?>
               <tr data-id="<?php echo (int)($row['slogin_id']??0); ?>" data-ip="<?php echo htmlspecialchars($row['ip_address']??'', ENT_QUOTES,'UTF-8'); ?>">
                 <td><?php echo htmlspecialchars($row['log_time']??'', ENT_QUOTES,'UTF-8'); ?></td>
@@ -130,10 +181,17 @@ $loginlogs  = sa_get('login_logs', ['select'=>'login_id,user_id,ip_address,log_t
                 <td><?php echo htmlspecialchars($row['incident_report']??'', ENT_QUOTES,'UTF-8'); ?></td>
                 <td><span class="status-badge status-suspicious">Suspicious</span></td>
               </tr>
-            <?php endforeach; endif; ?>
+            <?php endforeach; else: ?>
+              <tr>
+                <td colspan="5" style="text-align:center;padding:20px;color:#6b7280;font-size:12px;">
+                  No suspicious login attempts found. Click "Load More" to fetch data.
+                </td>
+              </tr>
+            <?php endif; ?>
           </tbody>
         </table>
       </div>
+      <button class="load-more-btn" onclick="loadSuspiciousAttempts()">Load More</button>
       <button class="btn-block" id="blockBtn" disabled onclick="blockSelectedIP()">Block Selected IP Address</button>
     </div>
     
@@ -148,27 +206,36 @@ $loginlogs  = sa_get('login_logs', ['select'=>'login_id,user_id,ip_address,log_t
               <th>Blocked By</th>
               <th>Blocked At</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            <?php if (is_array($blacklist)):
+            <?php if (is_array($blacklist) && count($blacklist) > 0):
               foreach ($blacklist as $row): ?>
-              <tr>
+              <tr data-block-id="<?php echo (int)($row['block_id']??0); ?>">
                 <td><?php echo htmlspecialchars($row['ip_address']??'', ENT_QUOTES,'UTF-8'); ?></td>
                 <td><?php echo htmlspecialchars($row['reason']??'', ENT_QUOTES,'UTF-8'); ?></td>
                 <td><?php echo htmlspecialchars((string)($row['admin_id']??''), ENT_QUOTES,'UTF-8'); ?></td>
                 <td><?php echo htmlspecialchars($row['blocked_at']??'', ENT_QUOTES,'UTF-8'); ?></td>
                 <td><span class="status-badge status-blocked">Blocked</span></td>
+                <td><button class="btn-unblock" onclick="unblockIP(<?php echo (int)($row['block_id']??0); ?>, '<?php echo htmlspecialchars($row['ip_address']??'', ENT_QUOTES,'UTF-8'); ?>')">Unblock</button></td>
               </tr>
-            <?php endforeach; endif; ?>
+            <?php endforeach; else: ?>
+              <tr>
+                <td colspan="6" style="text-align:center;padding:20px;color:#6b7280;font-size:12px;">
+                  No blacklisted IP addresses found. Click "Load More" to fetch data.
+                </td>
+              </tr>
+            <?php endif; ?>
           </tbody>
         </table>
       </div>
+      <button class="load-more-btn" onclick="loadBlacklistedIPs()">Load More</button>
     </div>
     
     <div class="card">
       <h3>Recent Security Events</h3>
-      <div style="overflow:auto">
+      <div style="overflow:auto;max-height:300px;border:1px solid #e5e7eb;border-radius:6px;">
         <table style="width:100%;border-collapse:collapse" id="events">
           <thead>
             <tr style="text-align:left;border-bottom:1px solid #e2e8f0">
@@ -179,7 +246,7 @@ $loginlogs  = sa_get('login_logs', ['select'=>'login_id,user_id,ip_address,log_t
             </tr>
           </thead>
           <tbody>
-            <?php if (is_array($loginlogs)):
+            <?php if (is_array($loginlogs) && count($loginlogs) > 0):
               foreach ($loginlogs as $row): ?>
               <tr>
                 <td style="padding:8px;border-bottom:1px solid #f3f4f6;">&nbsp;<?php echo htmlspecialchars($row['log_time']??'', ENT_QUOTES,'UTF-8'); ?></td>
@@ -187,10 +254,17 @@ $loginlogs  = sa_get('login_logs', ['select'=>'login_id,user_id,ip_address,log_t
                 <td style="padding:8px;border-bottom:1px solid #f3f4f6;">Login</td>
                 <td style="padding:8px;border-bottom:1px solid #f3f4f6;">IP: <?php echo htmlspecialchars($row['ip_address']??'', ENT_QUOTES,'UTF-8'); ?></td>
               </tr>
-            <?php endforeach; endif; ?>
+            <?php endforeach; else: ?>
+              <tr>
+                <td colspan="4" style="text-align:center;padding:20px;color:#6b7280;font-size:12px;">
+                  No security events found. Click "Load More" to fetch data.
+                </td>
+              </tr>
+            <?php endif; ?>
           </tbody>
         </table>
       </div>
+      <button class="load-more-btn" onclick="loadSecurityEvents()">Load More</button>
     </div>
   </div>
 
@@ -198,23 +272,151 @@ $loginlogs  = sa_get('login_logs', ['select'=>'login_id,user_id,ip_address,log_t
     let selectedRow = null;
     let selectedIP = null;
     
-    // Handle row selection in suspicious attempts table
-    document.querySelectorAll('#suspiciousTable tbody tr').forEach(row => {
-      row.addEventListener('click', function() {
-        // Remove previous selection
-        if (selectedRow) {
-          selectedRow.classList.remove('selected');
-        }
-        
-        // Select new row
-        this.classList.add('selected');
-        selectedRow = this;
-        selectedIP = this.getAttribute('data-ip');
-        
-        // Enable block button
-        document.getElementById('blockBtn').disabled = false;
+    // Load more functions for mobile optimization
+    function loadSuspiciousAttempts() {
+      fetch('security_data.php?action=suspicious&limit=20')
+        .then(response => response.json())
+        .then(data => {
+          const tbody = document.querySelector('#suspiciousTable tbody');
+          tbody.innerHTML = '';
+          if (data.length > 0) {
+            data.forEach(row => {
+              const tr = document.createElement('tr');
+              tr.setAttribute('data-id', row.slogin_id);
+              tr.setAttribute('data-ip', row.ip_address);
+              tr.innerHTML = `
+                <td>${row.log_time}</td>
+                <td>${row.username}</td>
+                <td>${row.ip_address}</td>
+                <td>${row.incident_report}</td>
+                <td><span class="status-badge status-suspicious">Suspicious</span></td>
+              `;
+              tbody.appendChild(tr);
+            });
+            // Re-attach click handlers
+            attachRowHandlers();
+          } else {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#6b7280;">No suspicious login attempts found.</td></tr>';
+          }
+        })
+        .catch(error => {
+          console.error('Error loading suspicious attempts:', error);
+        });
+    }
+    
+    function loadBlacklistedIPs() {
+      fetch('security_data.php?action=blacklist&limit=20')
+        .then(response => response.json())
+        .then(data => {
+          const tbody = document.querySelector('#blacklistTable tbody');
+          tbody.innerHTML = '';
+          if (data.length > 0) {
+            data.forEach(row => {
+              const tr = document.createElement('tr');
+              tr.innerHTML = `
+                <td>${row.ip_address}</td>
+                <td>${row.reason}</td>
+                <td>${row.admin_id}</td>
+                <td>${row.blocked_at}</td>
+                <td><span class="status-badge status-blocked">Blocked</span></td>
+              `;
+              tbody.appendChild(tr);
+            });
+          } else {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#6b7280;">No blacklisted IP addresses found.</td></tr>';
+          }
+        })
+        .catch(error => {
+          console.error('Error loading blacklisted IPs:', error);
+        });
+    }
+    
+    function loadSecurityEvents() {
+      fetch('security_data.php?action=events&limit=20')
+        .then(response => response.json())
+        .then(data => {
+          const tbody = document.querySelector('#events tbody');
+          tbody.innerHTML = '';
+          if (data.length > 0) {
+            data.forEach(row => {
+              const tr = document.createElement('tr');
+              tr.innerHTML = `
+                <td style="padding:8px;border-bottom:1px solid #f3f4f6;">&nbsp;${row.log_time}</td>
+                <td style="padding:8px;border-bottom:1px solid #f3f4f6;">User #${row.user_id}</td>
+                <td style="padding:8px;border-bottom:1px solid #f3f4f6;">Login</td>
+                <td style="padding:8px;border-bottom:1px solid #f3f4f6;">IP: ${row.ip_address}</td>
+              `;
+              tbody.appendChild(tr);
+            });
+          } else {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:#6b7280;">No security events found.</td></tr>';
+          }
+        })
+        .catch(error => {
+          console.error('Error loading security events:', error);
+        });
+    }
+    
+    function attachRowHandlers() {
+      // Handle row selection in suspicious attempts table
+      document.querySelectorAll('#suspiciousTable tbody tr[data-id]').forEach(row => {
+        row.addEventListener('click', function() {
+          // Remove previous selection
+          if (selectedRow) {
+            selectedRow.classList.remove('selected');
+          }
+          
+          // Select new row
+          this.classList.add('selected');
+          selectedRow = this;
+          selectedIP = this.getAttribute('data-ip');
+          
+          // Enable block button
+          document.getElementById('blockBtn').disabled = false;
+        });
       });
-    });
+    }
+    
+    // Initial attachment
+    attachRowHandlers();
+    
+    function unblockIP(blockId, ipAddress) {
+      if (confirm(`Are you sure you want to unblock IP address ${ipAddress}?`)) {
+        fetch('security_actions.php', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'unblock_ip',
+            block_id: blockId,
+            ip_address: ipAddress
+          })
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            alert(`IP address ${ipAddress} has been unblocked successfully.`);
+            // Remove the row from table
+            const row = document.querySelector(`tr[data-block-id="${blockId}"]`);
+            if (row) {
+              row.remove();
+            }
+            // Check if table is empty and show empty message
+            const tbody = document.querySelector('#blacklistTable tbody');
+            if (tbody && tbody.children.length === 0) {
+              tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#6b7280;font-size:12px;">No blacklisted IP addresses found.</td></tr>';
+            }
+          } else {
+            alert('Failed to unblock IP address: ' + (data.error || 'Unknown error'));
+          }
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          alert('An error occurred while unblocking the IP address.');
+        });
+      }
+    }
     
     function blockSelectedIP() {
       if (!selectedIP) {
