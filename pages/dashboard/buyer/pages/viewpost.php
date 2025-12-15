@@ -55,7 +55,7 @@ if (!$listing_id){
 
 // Load listing (from activelivestocklisting)
 [$lrows,$lst,$lerr] = sb_rest('GET','activelivestocklisting',[
-  'select'=>'listing_id,seller_id,livestock_type,breed,address,age,weight,price,created',
+  'select'=>'listing_id,seller_id,livestock_type,breed,address,age,weight,price,created,verified_at',
   'listing_id'=>'eq.'.$listing_id,
   'limit'=>1
 ]);
@@ -152,7 +152,51 @@ if ($typeName !== '' && $breedName !== ''){
     .quick{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
     .quick button{padding:6px 10px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer}
     .modal textarea{width:100%;min-height:100px;padding:10px;border:1px solid #e2e8f0;border-radius:8px;resize:vertical}
+    
+    @media (max-width: 640px){
+      .wrap{padding:8px}
+      .gallery{gap:8px}
+      .gallery img{width:200px;height:200px}
+      .meta{grid-template-columns:1fr;gap:8px;font-size:16px;line-height:1.3}
+      .title{font-size:20px}
+      .muted{font-size:14px}
+      .map{height:200px}
+      .cta .btn{font-size:16px;padding:10px 16px}
+      .modal .content{width:95%;padding:12px}
+      .modal textarea{min-height:80px;padding:8px}
+      .quick button{padding:4px 8px;font-size:12px}
+      .navbar{padding:8px 12px}
+      .card{padding:12px;margin-bottom:8px}
+    }
+    
+    @media (max-width: 480px){
+      .wrap{padding:6px}
+      .gallery img{width:150px;height:150px}
+      .meta{font-size:14px}
+      .title{font-size:18px}
+      .muted{font-size:12px}
+      .map{height:150px}
+      .cta .btn{font-size:14px;padding:8px 12px}
+      .modal .content{padding:8px}
+      .navbar{padding:6px 8px}
+      .card{padding:8px}
+      .quick button{padding:3px 6px;font-size:11px}
+    }
   </style>
+  <script>
+    function timeAgo(dateString){
+      if (!dateString) return '';
+      var date = new Date(dateString);
+      var now = new Date();
+      var seconds = Math.floor((now - date) / 1000);
+      
+      if (seconds < 60) return 'Posted just now';
+      if (seconds < 3600) return 'Posted ' + Math.floor(seconds / 60) + ' mins ago';
+      if (seconds < 86400) return 'Posted ' + Math.floor(seconds / 3600) + ' hours ago';
+      if (seconds < 2592000) return 'Posted ' + Math.floor(seconds / 86400) + ' days ago';
+      return 'Posted ' + Math.floor(seconds / 2592000) + ' months ago';
+    }
+  </script>
 </head>
 <body>
   <nav class="navbar">
@@ -164,7 +208,8 @@ if ($typeName !== '' && $breedName !== ''){
       <div style="display:flex;gap:16px;align-items:center;justify-content:space-between;margin-bottom:8px;">
         <div>
           <div class="title"><?php echo safe(($r['livestock_type']??'').' • '.($r['breed']??'')); ?></div>
-          <div class="muted">Seller: <?php echo safe($fullname); ?> • Created <?php echo safe($r['created']??''); ?></div>
+          <div class="muted">Seller: <?php echo safe($fullname); ?></div>
+          <div class="muted" id="postedTime" style="font-size:14px;"></div>
         </div>
       </div>
       <div class="gallery">
@@ -233,6 +278,15 @@ if ($typeName !== '' && $breedName !== ''){
       Array.prototype.forEach.call(document.querySelectorAll('.qmsg'), function(b){
         b.addEventListener('click', function(){ msgEl.value = b.getAttribute('data-text') || ''; msgEl.focus(); });
       });
+      
+      // Set posted time using verified_at timestamp
+      var postedTimeEl = document.getElementById('postedTime');
+      if (postedTimeEl) {
+        var verifiedAt = <?php echo json_encode($r['verified_at'] ?? ''); ?>;
+        if (verifiedAt) {
+          postedTimeEl.textContent = timeAgo(verifiedAt);
+        }
+      }
       if (sendBtn){
         sendBtn.addEventListener('click', function(){
           var fd = new FormData();

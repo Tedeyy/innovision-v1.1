@@ -174,6 +174,60 @@ if (isset($_GET['action']) && $_GET['action']==='check_confirmation'){
   exit;
 }
 
+// Handle interested listings request
+if (isset($_GET['action']) && $_GET['action']==='interests'){
+  header('Content-Type: application/json');
+  
+  // Fetch interests joined with listing and seller data
+  [$ints,$ist,$ier] = sb_rest('GET','listinginterest',[
+    'select'=>'interest_id,listing_id,buyer_id,message,created,listing:activelivestocklisting(listing_id,livestock_type,breed,price,created,address),seller:seller(user_id,user_fname,user_mname,user_lname,email,contact,location)',
+    'buyer_id'=>'eq.'.$buyerId,
+    'order'=>'created.desc'
+  ]);
+  
+  if (!($ist>=200 && $ist<300) || !is_array($ints)) $ints = [];
+  
+  // Process interests data
+  $out = [];
+  foreach ($ints as $r){
+    $seller = $r['seller'] ?? [];
+    $listing = $r['listing'] ?? [];
+    
+    // Generate thumbnail paths
+    $sf = $seller['user_fname'] ?? ''; $sm = $seller['user_mname'] ?? ''; $sl = $seller['user_lname'] ?? '';
+    $full = trim($sf.' '.($sm?:'').' '.$sl);
+    $san = strtolower(preg_replace('/[^a-z0-9]+/i','_', $full));
+    $san = trim($san, '_'); if ($san==='') $san='user';
+    $sellerNewFolder = ((int)($seller['user_id'] ?? 0)).'_'.$san;
+    $created = $listing['created'] ?? '';
+    $digits = preg_replace('/\D+/', '', (string)$created);
+    $createdKey = substr($digits, 0, 14);
+    $legacyFolder = ((int)($seller['user_id'] ?? 0)).'_'.((int)($listing['listing_id'] ?? 0));
+    
+    // Determine status folder
+    $status = strtolower($listing['status'] ?? 'active');
+    $statusFolder = 'active';
+    if ($status === 'verified') $statusFolder = 'verified';
+    elseif ($status === 'sold') $statusFolder = 'sold';
+    elseif ($status === 'underreview') $statusFolder = 'underreview';
+    elseif ($status === 'denied') $statusFolder = 'denied';
+    
+    $thumb = ($createdKey !== '')
+      ? ('../../bat/pages/storage_image.php?path=listings/'.$statusFolder.'/'.$sellerNewFolder.'/'.$createdKey.'_1img.jpg')
+      : ('../../bat/pages/storage_image.php?path=listings/'.$statusFolder.'/'.$legacyFolder.'/image1');
+    $thumb_fallback = '../../bat/pages/storage_image.php?path=listings/'.$statusFolder.'/'.$legacyFolder.'/image1';
+    
+    $r['thumb'] = $thumb;
+    $r['thumb_fallback'] = $thumb_fallback;
+    $r['seller'] = $seller;
+    $r['listing'] = $listing;
+    $out[] = $r;
+  }
+  
+  echo json_encode(['ok'=>true,'data'=>$out]);
+  exit;
+}
+
 if (isset($_GET['action']) && $_GET['action']==='list'){
   header('Content-Type: application/json');
   // Fetch from three tables where current user is the buyer
@@ -409,6 +463,22 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
     </div>
 
     <div class="card">
+      <h2 style="margin:0 0 12px 0;">Interested Listings</h2>
+      <table class="table" id="interestsTable">
+        <thead>
+          <tr>
+            <th>Listing</th>
+            <th>Seller</th>
+            <th>Message</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2 style="margin:0 0 12px 0;">My Transactions</h2>
       <table class="table" id="txTable">
         <thead>
           <tr>
@@ -474,6 +544,25 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
         if (t==='completed') return '<span class="badge badge-completed">Completed</span>';
         return '<span class="badge badge-default">'+(s||'')+'</span>';
       }
+      function loadInterests(){
+        fetch('transactions.php?action=interests', { credentials:'same-origin' })
+          .then(function(r){ return r.json(); })
+          .then(function(res){
+            var tb = document.querySelector('#interestsTable tbody');
+            tb.innerHTML = '';
+            (res.data||[]).forEach(function(row){
+              var seller = row.seller||{}; var listing = row.listing||{};
+              var tr = document.createElement('tr');
+              tr.innerHTML = '<td>'+(listing.livestock_type||'')+' • '+(listing.breed||'')+'</td>'+
+                '<td>'+ fullname(seller) +'</td>'+
+                '<td>'+(row.message||'').substring(0, 50)+(row.message && row.message.length > 50 ? '...' : '')+'</td>'+
+                '<td>'+ (row.created ? new Date(row.created).toLocaleDateString() : '') +'</td>'+
+                '<td><button class="btn btn-show-interest" data-row="'+encodeURIComponent(JSON.stringify(row))+'">View</button></td>';
+              tb.appendChild(tr);
+            });
+          });
+      }
+      
       function load(){
         fetch('transactions.php?action=list', { credentials:'same-origin' })
           .then(function(r){ return r.json(); })
@@ -491,7 +580,8 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
               tb.appendChild(tr);
             });
           });
-    }
+      }
+      loadInterests();
       load();
 
       document.addEventListener('click', function(e){

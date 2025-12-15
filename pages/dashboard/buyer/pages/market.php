@@ -108,7 +108,7 @@ if (isset($_GET['ajax']) && $_GET['ajax']=='1'){
   if (isset($_GET['max_price']) && $_GET['max_price']!==''){ $andConds[] = 'price.lte.'.(float)$_GET['max_price']; }
 
   $params = array_merge([
-    'select' => 'listing_id,seller_id,livestock_type,breed,address,age,weight,price,created',
+    'select' => 'listing_id,seller_id,livestock_type,breed,address,age,weight,price,created,verified_at',
     'order' => 'created.desc',
     'limit' => $limit,
     'offset' => $offset,
@@ -209,15 +209,46 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
     .detail{display:none;border-top:1px dashed #e2e8f0;margin-top:8px;padding-top:8px}
     .detail .map{height:200px;border:1px solid #e2e8f0;border-radius:8px}
     .muted{color:#4a5568;font-size:12px}
+    
+    /* Mobile responsive styles */
+    @media (max-width: 768px) {
+      .wrap{padding:0 8px}
+      h1{font-size:18px}
+      .map-top{height:200px !important}
+      .filters{grid-template-columns:repeat(4,1fr);gap:6px}
+      .filters label{font-size:12px}
+      .filters select, .filters input{font-size:12px;padding:4px}
+      .feed{gap:8px;margin-top:8px}
+      .item{grid-template-columns:80px 1fr;gap:8px;padding:6px}
+      .imgs img{width:60px;height:60px}
+      .item img[style*="width: 120px"]{width:60px !important;height:60px !important}
+      .detail .map{height:150px !important}
+      .btn{padding:6px 10px;font-size:12px}
+      .muted{font-size:10px}
+    }
+    
+    @media (max-width: 480px) {
+      .wrap{padding:0 4px}
+      h1{font-size:16px}
+      .map-top{height:150px !important}
+      .filters{grid-template-columns:repeat(2,1fr);gap:4px}
+      .filters label{font-size:10px}
+      .filters select, .filters input{font-size:10px;padding:3px}
+      .feed{gap:6px;margin-top:6px}
+      .item{grid-template-columns:50px 1fr;gap:6px;padding:4px}
+      .imgs img{width:40px;height:40px}
+      .item img[style*="width: 120px"]{width:40px !important;height:40px !important}
+      .detail .map{height:120px !important}
+      .btn{padding:4px 6px;font-size:10px}
+      .muted{font-size:8px}
+      .card{padding:12px}
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="top" style="margin-bottom:8px;">
       <div><h1>Marketplace</h1></div>
-      <div>
-        <a class="btn" href="../dashboard.php">Back to Dashboard</a>
-      </div>
     </div>
 
     <div id="top-map" class="map-top"></div>
@@ -294,24 +325,45 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
         var breedSel = document.getElementById('f-breed');
         if (!typeSel || !breedSel) return;
         var allBreedOptions = Array.prototype.slice.call(breedSel.querySelectorAll('option'));
+        
         function applyBreedFilter(){
           var typeName = typeSel.value || '';
-          var selectedTypeIds = [];
-          // map type name to type_id via a hidden map built server-side
-          // Build map here from DOM: find breeds grouped by data-typeid
-          var opts = allBreedOptions.slice(1); // skip 'All'
-          var typeIds = {};
-          // No direct type_id from type name here; keep all breeds if no type selected
+          var selectedTypeId = null;
+          
+          // Find the type_id for the selected type name
+          if (typeName) {
+            // Get type_id from the types data (we need to add this mapping)
+            <?php foreach (($types?:[]) as $t): ?>
+            if (typeName === '<?php echo safe($t['name']); ?>') {
+              selectedTypeId = <?php echo (int)$t['type_id']; ?>;
+            }
+            <?php endforeach; ?>
+          }
+          
+          // Clear and rebuild breed options
           while (breedSel.firstChild) breedSel.removeChild(breedSel.firstChild);
-          var all = document.createElement('option'); all.value=''; all.textContent='All'; breedSel.appendChild(all);
+          var all = document.createElement('option'); 
+          all.value=''; 
+          all.textContent='All'; 
+          breedSel.appendChild(all);
+          
+          var opts = allBreedOptions.slice(1); // skip 'All'
           opts.forEach(function(o){
-            if (!typeName){ breedSel.appendChild(o); return; }
-            var tid = o.getAttribute('data-typeid');
-            // When a type is chosen, filter by matching breeds from that type_id
-            // Because we don't have type_id from type name, we include all breeds; optional enhancement: fetch mapping.
-            breedSel.appendChild(o);
+            if (!typeName){ 
+              breedSel.appendChild(o); 
+              return;
+            }
+            var tid = parseInt(o.getAttribute('data-typeid'));
+            // Only add breeds that match the selected type
+            if (tid === selectedTypeId) {
+              breedSel.appendChild(o);
+            }
           });
+          
+          // Always set breed back to 'All' after filtering
+          breedSel.value = '';
         }
+        
         typeSel.addEventListener('change', applyBreedFilter);
         applyBreedFilter();
       })();
@@ -351,11 +403,10 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
               m.on('click', function(){ window.location.href = 'viewpost.php?listing_id='+encodeURIComponent(p.listing_id); });
               bounds.push([p.lat, p.lng]);
             });
-            // sold pins (yellow)
+            // sold pins (yellow) - no tooltips or click events
             (data.soldPins||[]).forEach(function(p){
               var m2 = L.circleMarker([p.lat, p.lng], { radius:7, color:'#f59e0b', fillColor:'#fbbf24', fillOpacity:0.9 }).addTo(markerLayer);
-              m2.bindTooltip((p.type||'')+' • '+(p.breed||''));
-              m2.on('click', function(){ window.location.href = 'viewpost.php?listing_id='+encodeURIComponent(p.listing_id); });
+              // Sold pins don't show tooltips or allow clicking - they're just visual indicators
               bounds.push([p.lat, p.lng]);
             });
             if (bounds.length){ try{ map.fitBounds(bounds, { padding:[20,20] }); }catch(e){} }
@@ -409,6 +460,19 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
         if (s==null) return '';
         return String(s).replace(/[&<>"]+/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; });
       }
+      
+      function timeAgo(dateString){
+        if (!dateString) return '';
+        var date = new Date(dateString);
+        var now = new Date();
+        var seconds = Math.floor((now - date) / 1000);
+        
+        if (seconds < 60) return 'Posted just now';
+        if (seconds < 3600) return 'Posted ' + Math.floor(seconds / 60) + ' mins ago';
+        if (seconds < 86400) return 'Posted ' + Math.floor(seconds / 3600) + ' hours ago';
+        if (seconds < 2592000) return 'Posted ' + Math.floor(seconds / 86400) + ' days ago';
+        return 'Posted ' + Math.floor(seconds / 2592000) + ' months ago';
+      }
 
       function loadMore(){
         if (state.loading || state.done) return;
@@ -445,6 +509,12 @@ if ($bstatus < 200 || $bstatus >= 300) { $breeds = []; }
         document.getElementById('f-max-price').value = '';
         document.getElementById('f-min-weight').value = '';
         document.getElementById('f-max-weight').value = '';
+        // Trigger breed filter update to show all breeds
+        var typeSel = document.getElementById('f-type');
+        if (typeSel) {
+          var event = new Event('change');
+          typeSel.dispatchEvent(event);
+        }
         feed.innerHTML = ''; markerLayer.clearLayers();
         state.offset = 0; state.done = false; loadMore();
         loadPins();

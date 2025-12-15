@@ -24,6 +24,33 @@ a.btn{display:inline-block;margin-top:12px;padding:10px 16px;border-radius:10px;
 .menu-overlay.active{opacity:1;pointer-events:auto}
 
 @media (max-width: 640px){
-  .hamburger{display:flex}
+  .hamburger{display:flex;order:3}
   .nav-center{display:none !important}
+  .nav-right{gap:6px}
+  .nav-right .profile{display:none}
+  .nav-right .btn[href*="logout"]{display:none}
+  .navbar{justify-content:space-between}
+  body{padding:12px}
+  .wrap{padding:0}
+  .card{padding:16px;margin-bottom:12px}
+  h1{font-size:18px}
+  .navbar{padding:8px 12px;margin-bottom:12px}
+  .greeting{font-size:12px}
+  .btn{padding:6px 10px;font-size:12px}
+  .profile .avatar{width:28px;height:28px}
+  #map{height:180px !important}
+  #salesLineChart{height:180px !important}
+  iframe[style*="height:100vh"]{height:60vh !important}
+  #notifPane{width:280px;right:8px;top:48px}
+}
+
+@media (max-width: 480px){
+  body{padding:8px}
+  .card{padding:12px;margin-bottom:8px}
+  h1{font-size:16px}
+  .navbar{padding:6px 8px;margin-bottom:8px}
+  .brand{font-size:14px}
+  .greeting{font-size:10px}
+  .nav-right .profile{display:none}
+  .nav-right .btn[href*="logout"]{display:none}
 }
