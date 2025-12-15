@@ -65,6 +65,22 @@ if (isset($_POST['action']) && $_POST['action']==='set_schedule'){
   if (!$txId || !$listingId || !$sellerId || !$buyerId || $dt===''){
     echo json_encode(['ok'=>false,'error'=>'missing_params']); exit;
   }
+  
+  // Check if transaction already has date/time and location (reschedule case)
+  [$existingTx,$txStatus,$txError] = sb_rest('GET','ongoingtransactions',[
+    'select'=>'transaction_date,transaction_location,bat_id',
+    'transaction_id'=>'eq.'.$txId,
+    'limit'=>1
+  ]);
+  
+  $isReschedule = false;
+  if ($txStatus>=200 && $txStatus<300 && is_array($existingTx) && !empty($existingTx)){
+    $existing = $existingTx[0];
+    if (!empty($existing['transaction_date']) && !empty($existing['transaction_location'])){
+      $isReschedule = true;
+    }
+  }
+  
   // Update ongoingtransactions with date/location and bat_id
   $upd = [
     'bat_id'=>$batId,
@@ -74,6 +90,21 @@ if (isset($_POST['action']) && $_POST['action']==='set_schedule'){
   [$ur,$us,$ue] = sb_rest('PATCH','ongoingtransactions',[ 'transaction_id'=>'eq.'.$txId ], [$upd]);
   if (!($us>=200 && $us<300)){
     echo json_encode(['ok'=>false,'error'=>'update_failed','code'=>$us]); exit;
+  }
+  
+  // If rescheduling, remove existing schedule entry and confirmation record
+  if ($isReschedule) {
+    // Remove existing schedule entry
+    [$delSched,$delStatus,$delError] = sb_rest('DELETE','schedule',[
+      'bat_id'=>'eq.'.$batId,
+      'month'=>'eq.'.date('m', strtotime($dt)),
+      'day'=>'eq.'.date('d', strtotime($dt))
+    ], null, ['Prefer: return=minimal']);
+    
+    // Remove confirmation record for this transaction
+    [$delConf,$delConfStatus,$delConfError] = sb_rest('DELETE','show_confirmation',[
+      'transaction_id'=>'eq.'.$txId
+    ], null, ['Prefer: return=minimal']);
   }
   // Also create a schedule entry
   $ts = strtotime($dt);
@@ -109,7 +140,7 @@ if (isset($_POST['action']) && $_POST['action']==='set_schedule'){
     if ($listing['price']) $livestockInfo .= ' • ₱' . $listing['price'];
   }
   
-  $title = 'Meet-up: ' . ($livestockInfo ? $livestockInfo : 'Listing #' . $listingId);
+  $title = ($isReschedule ? 'Reschedule: ' : 'Meet-up: ') . ($livestockInfo ? $livestockInfo : 'Listing #' . $listingId);
   
   $sellerName = ($seller && $seller['user_fname']) ? trim($seller['user_fname'] . ' ' . ($seller['user_lname']||'')) : 'Seller #' . $sellerId;
   $buyerName = ($buyer && $buyer['user_fname']) ? trim($buyer['user_fname'] . ' ' . ($buyer['user_lname']||'')) : 'Buyer #' . $buyerId;
@@ -119,6 +150,10 @@ if (isset($_POST['action']) && $_POST['action']==='set_schedule'){
           ' | Listing #' . $listingId . 
           ' | Meet-up at: ' . $loc . 
           ' | Original Address: ' . $address;
+  
+  if ($isReschedule) {
+    $desc .= ' | RESCHEDULED';
+  }
   
   $schedPayload = [[
     'bat_id'=>$batId,
@@ -132,9 +167,9 @@ if (isset($_POST['action']) && $_POST['action']==='set_schedule'){
   [$sr,$ss,$se] = sb_rest('POST','schedule',[], $schedPayload, ['Prefer: return=representation']);
   $warnings = [];
   if (!($ss>=200 && $ss<300)) $warnings[] = 'Failed to create schedule entry';
-  // Notify seller about scheduled meet-up
-  $title = 'Meet-up Scheduled';
-  $msg = 'BAT scheduled: '.($whenVal ?: '').' at '.($loc ?: '');
+  // Notify seller about scheduled/rescheduled meet-up
+  $title = $isReschedule ? 'Meet-up Rescheduled' : 'Meet-up Scheduled';
+  $msg = 'BAT '.($isReschedule ? 'rescheduled' : 'scheduled').': '.date('M j, Y g:i A', strtotime($dt)).' at '.$loc;
   notify_send((int)$sellerId, 'seller', $title, $msg, (int)$listingId, 'meetup');
   echo json_encode(['ok'=>true,'warning'=> (count($warnings)? implode('; ', $warnings) : null)]); exit;
 }
@@ -195,6 +230,72 @@ if (isset($_POST['action']) && $_POST['action']==='deny_meetup_request'){
   if (!($ds>=200 && $ds<300)){
     echo json_encode(['ok'=>false,'error'=>'delete_failed','code'=>$ds]); exit;
   }
+  echo json_encode(['ok'=>true]);
+  exit;
+}
+
+// Inline action: get confirmation status for a transaction
+if (isset($_GET['action']) && $_GET['action']==='get_confirmation'){
+  header('Content-Type: application/json');
+  $txId = isset($_GET['transaction_id']) ? (int)$_GET['transaction_id'] : 0;
+  if (!$txId){ echo json_encode(['ok'=>false,'error'=>'missing_transaction_id']); exit; }
+  
+  [$rows,$st,$err] = sb_rest('GET','show_confirmation',[
+    'select'=>'*',
+    'transaction_id'=>'eq.'.$txId
+  ]);
+  
+  if (!($st>=200 && $st<300) || !is_array($rows)){
+    echo json_encode(['ok'=>false,'error'=>'load_failed','code'=>$st]); exit;
+  }
+  
+  $confirmation = !empty($rows) ? $rows[0] : null;
+  echo json_encode(['ok'=>true,'data'=>$confirmation]);
+  exit;
+}
+
+// Inline action: confirm attendance as BAT
+if (isset($_POST['action']) && $_POST['action']==='confirm_attendance_bat'){
+  header('Content-Type: application/json');
+  $txId = isset($_POST['transaction_id']) ? (int)$_POST['transaction_id'] : 0;
+  if (!$txId){ echo json_encode(['ok'=>false,'error'=>'missing_transaction_id']); exit; }
+  
+  $now = date('Y-m-d H:i:s');
+  
+  // Check if confirmation record exists
+  [$existing,$exSt,$exErr] = sb_rest('GET','show_confirmation',[
+    'select'=>'*',
+    'transaction_id'=>'eq.'.$txId,
+    'limit'=>1
+  ]);
+  
+  if ($exSt>=200 && $exSt<300 && is_array($existing) && !empty($existing)){
+    // Update existing record - only update bat_id, confirm_bat, and confirmed_bat
+    [$upd,$upSt,$upErr] = sb_rest('PATCH','show_confirmation',[
+      'transaction_id'=>'eq.'.$txId
+    ],[[
+      'bat_id'=>$batId,
+      'confirm_bat'=>'Confirmed',
+      'confirmed_bat'=>$now
+    ]]);
+    
+    if (!($upSt>=200 && $upSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'update_failed','code'=>$upSt,'detail'=>$upErr]); exit;
+    }
+  } else {
+    // Create new record - only include required fields
+    [$ins,$inSt,$inErr] = sb_rest('POST','show_confirmation',[],[[
+      'transaction_id'=>$txId,
+      'bat_id'=>$batId,
+      'confirm_bat'=>'Confirmed',
+      'confirmed_bat'=>$now
+    ]]);
+    
+    if (!($inSt>=200 && $inSt<300)){
+      echo json_encode(['ok'=>false,'error'=>'insert_failed','code'=>$inSt,'detail'=>$inErr]); exit;
+    }
+  }
+  
   echo json_encode(['ok'=>true]);
   exit;
 }
@@ -464,6 +565,17 @@ foreach ($sp as $p) {
       #txMap{height:200px !important}
       .panel h2{font-size:14px}
       .btn{padding:5px 8px;font-size:11px}
+      /* Attendance confirmation mobile styles */
+      #attendanceContent{font-size:11px}
+      #attendanceContent h3{font-size:12px}
+      #attendanceContent .table{font-size:10px}
+      #attendanceContent .table th,#attendanceContent .table td{padding:2px 4px}
+      #attendanceContent .table th{width:80px !important}
+      #attendanceContent .table th:nth-child(2){width:auto !important}
+      #attendanceContent .table th:nth-child(3){width:60px !important}
+      #attendanceContent .table th:nth-child(4){width:70px !important}
+      #attendanceContent span{font-size:8px;padding:1px 3px}
+      #btnConfirmAttendance{padding:4px 8px;font-size:10px}
     }
   </style>
 </head>
@@ -525,16 +637,14 @@ foreach ($sp as $p) {
             <th>Timestamp</th>
             <th>BAT Name</th>
             <th>Meet-up Date</th>
-            <th>Location</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           <?php $ongoRows = $ongo['rows'] ?? []; ?>
           <?php if (count($ongoRows)===0): ?>
-            <tr><td colspan="10" style="color:#4a5568;">No ongoing transactions.</td></tr>
+            <tr><td colspan="7" style="color:#4a5568;">No ongoing transactions.</td></tr>
           <?php else: foreach ($ongoRows as $r): 
-            $loc = $r['transaction_location'] ?? ($r['Transaction_location'] ?? '');
             $s = $r['seller'] ?? null;
             $b = $r['buyer'] ?? null;
             $batRow = $r['bat'] ?? null;
@@ -549,7 +659,6 @@ foreach ($sp as $p) {
               <td><?php echo esc(($r['started_at'] ?? '') ? date('H/i d/m/Y', strtotime($r['started_at'])) : ''); ?></td>
               <td><?php echo esc($batName); ?></td>
               <td><?php echo esc(($r['transaction_date'] ?? '') ? date('H/i d/m/Y', strtotime($r['transaction_date'])) : ''); ?></td>
-              <td><?php echo esc($loc); ?></td>
               <td><button class="btn btn-show" data-row="<?php echo esc(json_encode($r)); ?>">Show</button></td>
             </tr>
           <?php endforeach; endif; ?>
@@ -571,7 +680,6 @@ foreach ($sp as $p) {
             <th>Timestamp</th>
             <th>BAT Name</th>
             <th>Meet-up Date</th>
-            <th>Location</th>
             <th>Completed</th>
             <th>Actions</th>
           </tr>
@@ -579,7 +687,7 @@ foreach ($sp as $p) {
         <tbody>
           <?php $doneRows = $done['rows'] ?? []; ?>
           <?php if (count($doneRows)===0): ?>
-            <tr><td colspan="11" style="color:#4a5568;">No completed transactions.</td></tr>
+            <tr><td colspan="8" style="color:#4a5568;">No completed transactions.</td></tr>
           <?php else: foreach ($doneRows as $r): 
             $s = $r['seller'] ?? null;
             $b = $r['buyer'] ?? null;
@@ -595,7 +703,6 @@ foreach ($sp as $p) {
               <td><?php echo esc(($r['started_at'] ?? '') ? date('H/i d/m/Y', strtotime($r['started_at'])) : ''); ?></td>
               <td><?php echo esc($batName); ?></td>
               <td><?php echo esc(($r['transaction_date'] ?? '') ? date('H/i d/m/Y', strtotime($r['transaction_date'])) : ''); ?></td>
-              <td><?php echo esc($r['transaction_location'] ?? ''); ?></td>
               <td><?php echo esc(($r['completed_transaction'] ?? '') ? date('H/i d/m/Y', strtotime($r['completed_transaction'])) : ''); ?></td>
               <td><button class="btn btn-show" data-row="<?php echo esc(json_encode($r)); ?>">Show</button></td>
             </tr>
@@ -604,13 +711,7 @@ foreach ($sp as $p) {
       </table>
     </div>
 
-    <!-- Service Coverage Map -->
-    <div class="card section">
-      <h2 style="margin:0 0 8px 0;">Service Coverage Map</h2>
-      <div id="coverageMap" style="height:400px;border:1px solid #e5e7eb;border-radius:10px;"></div>
-      <div id="coverageStatus" style="margin-top:8px;color:#4a5568;font-size:14px"></div>
-    </div>
-
+    
   </div>
 
   <!-- Transaction Details Modal -->
@@ -724,8 +825,8 @@ foreach ($sp as $p) {
                       '<div><strong>Date & Time:</strong> <input type="datetime-local" id="txDateTime" value="'+(whenVal||'')+'" style="margin-left:8px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;" /></div>'+
                       '<div><strong>Location:</strong> <input type="text" id="txLocation" value="'+(locVal||'')+'" placeholder="lat,lng (e.g., 8.314209,124.859425)" style="margin-left:8px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;width:300px;" /></div>'+
                     '</div>'+
-                    '<div style="margin-bottom:8px;color:#4a5568;font-size:12px;">💡 Click anywhere on the map to set the meet-up location</div>'+
-                    '<div id="txMap" style="height:260px;border:1px solid #e2e8f0;border-radius:8px;cursor:crosshair;" title="Click anywhere on the map to set meet-up location"></div>'+
+                    '<div style="margin-bottom:8px;color:#4a5568;font-size:12px;">💡 Click anywhere on map to set meet-up location</div>'+
+                    '<div id="txMap" style="height:260px;border:1px solid #e2e8f0;border-radius:8px;cursor:crosshair;" title="Click anywhere on map to set meet-up location"></div>'+
                     '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">'+
                       '<button class="btn" id="btnSaveTx">Save Meet-up Details</button>'+
                       '<button class="btn" id="btnCompleteTx" style="background:#10b981;color:#fff;">Complete Transaction</button>'+
@@ -738,12 +839,40 @@ foreach ($sp as $p) {
                         '<thead><tr><th>Date & Time</th><th>Location</th><th>Description</th><th>Actions</th></tr></thead>'+
                         '<tbody></tbody>'+ 
                       '</table>'+ 
-                    '</div>'+ 
+                    '</div>'+
+                    '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;">'+
+                      '<h3 style="margin:0 0 12px 0;font-size:16px;color:#2d3748;">Attendance Confirmation</h3>'+
+                      '<div id="attendanceLoading" class="subtle">Loading attendance status...</div>'+
+                      '<div id="attendanceContent" style="display:none;">'+
+                        '<table class="table" style="margin-top:8px;">'+
+                          '<thead>'+
+                            '<tr>'+
+                              '<th style="width:120px;">Role</th>'+
+                              '<th>Full Name</th>'+
+                              '<th style="width:100px;">Status</th>'+
+                              '<th style="width:120px;">Confirmed At</th>'+
+                            '</tr>'+
+                          '</thead>'+
+                          '<tbody id="attendanceBody">'+
+                          '</tbody>'+
+                        '</table>'+
+                      '</div>'+
+                    '</div>'+
                   '</div>'
                 ));
               txBody.innerHTML = bodyHtml;
               // Open modal first so map can compute size
               openModal('txModal');
+              // Auto-scroll to listing details after modal opens
+              setTimeout(function(){
+                var modal = document.getElementById('txModal');
+                if (modal) {
+                  var firstCard = modal.querySelector('.card');
+                  if (firstCard) {
+                    firstCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                }
+              }, 100);
               // Initialize map after modal is visible
               setTimeout(function(){
                 if (!window.L){ return; }
@@ -944,6 +1073,62 @@ foreach ($sp as $p) {
                     });
                 }
               }
+              // Load attendance confirmation for ongoing transactions
+              if (isOngoing) {
+                var attendanceLoading = document.getElementById('attendanceLoading');
+                var attendanceContent = document.getElementById('attendanceContent');
+                var attendanceBody = document.getElementById('attendanceBody');
+                var confirmBtn = document.getElementById('btnConfirmAttendance');
+                var confirmStatus = document.getElementById('confirmStatus');
+                
+                // Fetch attendance data
+                fetch('transaction_monitoring.php?action=get_confirmation&transaction_id=' + (data.transaction_id || ''), { credentials:'same-origin' })
+                  .then(function(r){ return r.json(); })
+                  .then(function(res){
+                    if (attendanceLoading) attendanceLoading.style.display = 'none';
+                    if (attendanceContent) attendanceContent.style.display = 'block';
+                    
+                    if (res && res.ok && res.data) {
+                      var conf = res.data;
+                      var rows = '';
+                      
+                      // Seller row
+                      rows += '<tr>' +
+                        '<td>Seller</td>' +
+                        '<td>' + fullname(seller) + '</td>' +
+                        '<td><span style="padding:2px 8px;border-radius:4px;font-size:12px;background:' + 
+                          (conf.confirm_seller === 'Confirmed' ? '#d1fae5;color:#065f46' : '#fef3c7;color:#92400e') + '">' + 
+                          (conf.confirm_seller || 'Waiting') + '</span></td>' +
+                        '<td>' + (conf.confirmed_seller ? new Date(conf.confirmed_seller).toLocaleString() : '-') + '</td>' +
+                      '</tr>';
+                      
+                      // Buyer row  
+                      rows += '<tr>' +
+                        '<td>Buyer</td>' +
+                        '<td>' + fullname(buyer) + '</td>' +
+                        '<td><span style="padding:2px 8px;border-radius:4px;font-size:12px;background:' + 
+                          (conf.confirm_buyer === 'Confirmed' ? '#d1fae5;color:#065f46' : '#fef3c7;color:#92400e') + '">' + 
+                          (conf.confirm_buyer || 'Waiting') + '</span></td>' +
+                        '<td>' + (conf.confirmed_buyer ? new Date(conf.confirmed_buyer).toLocaleString() : '-') + '</td>' +
+                      '</tr>';
+                      
+                      if (attendanceBody) attendanceBody.innerHTML = rows;
+                    } else {
+                      // No confirmation record yet
+                      if (attendanceBody) {
+                        attendanceBody.innerHTML = 
+                          '<tr><td>Seller</td><td>' + fullname(seller) + '</td><td><span style="padding:2px 8px;border-radius:4px;font-size:12px;background:#fef3c7;color:#92400e">Waiting</span></td><td>-</td></tr>' +
+                          '<tr><td>Buyer</td><td>' + fullname(buyer) + '</td><td><span style="padding:2px 8px;border-radius:4px;font-size:12px;background:#fef3c7;color:#92400e">Waiting</span></td><td>-</td></tr>';
+                      }
+                    }
+                  })
+                  .catch(function(){
+                    if (attendanceLoading) attendanceLoading.style.display = 'none';
+                    if (attendanceContent) attendanceContent.style.display = 'block';
+                    if (attendanceBody) attendanceBody.innerHTML = '<tr><td colspan="4" style="color:#ef4444;">Failed to load attendance status</td></tr>';
+                  });
+              }
+              
               // Complete flow
               var completeBtn = document.getElementById('btnCompleteTx');
               if (!isCompleted && completeBtn) {

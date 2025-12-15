@@ -98,7 +98,7 @@ if (!is_array($logs)) $logs = [];
                 <td><?php echo safe($typeMap[(int)$row['livestocktype_id']] ?? ('Type #'.(int)$row['livestocktype_id'])); ?></td>
                 <td><?php echo safe($breedMap[(int)$row['breed_id']] ?? ('Breed #'.(int)$row['breed_id'])); ?></td>
                 <td><strong>₱<?php echo number_format((float)($row['marketprice'] ?? 0), 2); ?></strong></td>
-                <td><?php echo safe(substr((string)($row['created'] ?? ''),0,19)); ?></td>
+                <td><?php echo safe(date('H:i d/m/Y', strtotime($row['created'] ?? ''))); ?></td>
               </tr>
             <?php endforeach; endif; ?>
           </tbody>

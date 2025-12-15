@@ -520,6 +520,19 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
       $sellerId = (int)$tx['seller_id'];
       $seller = $tx['seller'] ?? [];
       
+      // Check if seller has already confirmed attendance
+      [$confRows,$confSt,$confErr] = sb_rest('GET','show_confirmation',[
+        'select'=>'confirmation_id,confirm_seller,confirmed_seller',
+        'transaction_id'=>'eq.'.$tx['transaction_id'],
+        'seller_id'=>'eq.'.$sellerId,
+        'limit'=>1
+      ]);
+      if ($confSt>=200 && $confSt<300 && is_array($confRows) && !empty($confRows)) {
+        $tx['seller_confirmation'] = $confRows[0];
+      } else {
+        $tx['seller_confirmation'] = null;
+      }
+      
       // Build Supabase public image URLs for this listing
       // Use created_at if available, otherwise fallback to created
       $createdRaw = $tx['listing']['created_at'] ?? ($tx['listing']['created'] ?? '');
@@ -555,8 +568,6 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
       
       $tx['meetup_location'] = $tx['transaction_location'] ?? null;
       
-      // Flag if a meetup_request already exists for this transaction (for this seller)
-    }
       // Add BAT fullname
       if (isset($tx['bat'])) {
         $bat = $tx['bat'];
@@ -564,6 +575,8 @@ if (isset($_GET['action']) && $_GET['action']==='list'){
       } else {
         $tx['bat_fullname'] = null;
       }
+      
+      // Flag if a meetup_request already exists for this transaction (for this seller)
     }
   }
 
@@ -1233,11 +1246,27 @@ if (isset($_POST['action']) && $_POST['action']==='schedule_meetup'){
             reportBtn.disabled = false;
             reportBtn.textContent = 'Report Buyer';
           }
-          if (meetBtn){ meetBtn.disabled = !isStarted; }
+          if (meetBtn){ 
+            if (isCompleted) {
+              meetBtn.style.display = 'none';
+            } else {
+              meetBtn.style.display = '';
+              meetBtn.disabled = !isStarted;
+            }
+          }
 
           var hasMeetupDetails = !!(data.meetup_date || data.meetup_time || data.meetup_location);
+          var sellerConfirmation = data.seller_confirmation || null;
+          var hasConfirmed = !!(sellerConfirmation && sellerConfirmation.confirm_seller === 'Confirm');
+          
           if (btnConfirmShow){
             btnConfirmShow.style.display = (isOngoing && hasMeetupDetails) ? '' : 'none';
+            btnConfirmShow.disabled = hasConfirmed;
+            if (hasConfirmed) {
+              btnConfirmShow.textContent = 'Confirmed';
+            } else {
+              btnConfirmShow.textContent = 'Confirm Attendance';
+            }
           }
           if (btnSuggestMeetup){
             btnSuggestMeetup.style.display = (isOngoing && !hasMeetupDetails) ? '' : 'none';

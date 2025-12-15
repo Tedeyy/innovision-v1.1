@@ -239,9 +239,6 @@ $breedData = array_values($breedCounts);
     </div>
     <div class="wrap">
         <div class="top">
-            <div>
-                <h1>Dashboard</h1>
-            </div>
         </div>
         <div class="card">
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:10px 0;">

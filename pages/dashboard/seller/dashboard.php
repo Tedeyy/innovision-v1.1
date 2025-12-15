@@ -232,9 +232,6 @@ if ($sellerId) {
                 <span class="avatar">🔔</span>
                 <span id="notifBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;border-radius:999px;padding:0 6px;font-size:10px;line-height:16px;min-width:16px;text-align:center;">0</span>
             </a>
-            <a class="profile" href="pages/profile.php" aria-label="Profile">
-                <span class="avatar">👤</span>
-            </a>
         </div>
     </nav>
     <!-- Mobile Menu -->
@@ -242,8 +239,8 @@ if ($sellerId) {
         <a href="pages/pricewatch.php">Price Watch</a>
         <a href="pages/userreport.php">User Report</a>
         <a href="pages/transactions.php">Transactions</a>
-        <a href="../logout.php">Logout</a>
         <a href="pages/profile.php">Profile</a>
+        <a href="../logout.php">Logout</a>
     </div>
     <div class="menu-overlay"></div>
     <div id="notifPane" style="display:none;position:fixed;top:56px;right:16px;width:300px;max-height:50vh;overflow:auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 20px rgba(0,0,0,.08);z-index:10000;">
@@ -253,11 +250,6 @@ if ($sellerId) {
         </div>
     </div>
     <div class="wrap">
-        <div class="top">
-            <div>
-                <h1>Dashboard</h1>
-            </div>
-        </div>
         <?php if (!empty($_SESSION['flash_message'])): ?>
             <div class="card" style="border-left:4px solid #10b981;color:#065f46;background:#ecfdf5;margin-bottom:8px;">
                 <div style="padding:10px;"><?php echo htmlspecialchars((string)$_SESSION['flash_message'], ENT_QUOTES, 'UTF-8'); ?></div>
@@ -303,23 +295,7 @@ if ($sellerId) {
             <h3>Service Coverage Map</h3>
             <div id="map" class="mapbox" aria-label="Map placeholder"></div>
             <div id="geoStatus" style="margin-top:8px;color:#4a5568;font-size:14px"></div>
-            <div style="margin-top:12px;overflow-x:auto;">
-                <table id="coverageTable" style="width:100%;border-collapse:collapse;font-size:13px;">
-                    <thead>
-                        <tr style="background:#f3f4f6;color:#4b5563;">
-                            <th style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:left;">Listing ID</th>
-                            <th style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:left;">Type</th>
-                            <th style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:left;">Breed</th>
-                            <th style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:left;">Status</th>
-                            <th style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:left;">Pin</th>
-                            <th style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:left;">Address</th>
-                            <th style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:left;">Created</th>
-                            <th style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">Price (₱)</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
+            <div style="margin-top:12px;overflow-x:auto;"></div>
         </div>
 
         <div class="card">

@@ -17,6 +17,19 @@ html,body{margin:0;padding:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,s
 .card{background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 20px rgba(0,0,0,.04)}
 .card > *{padding:12px}
 
+/* Button styles */
+.btn{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:8px 16px;border:1px solid #d1d5db;border-radius:6px;background:#ffffff;color:#374151;text-decoration:none;font-size:14px;font-weight:500;cursor:pointer;transition:all 0.2s ease}
+.btn:hover{background:#f9fafb;border-color:#9ca3af;color:#111827}
+.btn:active{background:#f3f4f6}
+.btn:disabled{background:#f9fafb;color:#9ca3af;border-color:#e5e7eb;cursor:not-allowed}
+
+.btn-start{background:#10b981;color:#ffffff;border-color:#10b981}
+.btn-start:hover:not(:disabled){background:#059669;border-color:#059669}
+.btn-start:disabled{background:#d1fae5;color:#6ee7b7;border-color:#6ee7b7}
+
+.btn-profile{background:#3b82f6;color:#ffffff;border-color:#3b82f6}
+.btn-profile:hover{background:#2563eb;border-color:#2563eb}
+
 .listingstatus{width:100%}
 .mapbox{width:100%;height:360px;border:1px solid #e5e7eb;border-radius:8px}
 .chartbox{width:100%;max-width:100%;overflow:auto}
@@ -31,26 +44,45 @@ html,body{margin:0;padding:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,s
 .menu-overlay.active{opacity:1;pointer-events:auto}
 
 @media (max-width: 640px){
-  html,body{font-size:14px}
-  .navbar{flex-wrap:wrap;gap:8px;padding:8px 12px}
-  .nav-left,.nav-right{width:100%;justify-content:space-between}
-  .hamburger{display:flex}
+  html,body{font-size:12px}
+  .navbar{flex-wrap:wrap;gap:8px;padding:8px 12px;justify-content:space-between}
+  .nav-left{width:auto;order:1}
+  .nav-right{width:auto;order:2}
+  .hamburger{display:flex;order:3}
   .nav-center{display:none !important}
-  .navbar .brand{font-size:16px}
+  .navbar .brand{font-size:14px}
   .navbar .search{flex:1}
-  .navbar .search input{width:100%;height:34px}
-  .navbar .btn{height:30px;padding:0 8px;font-size:13px}
+  .navbar .search input{width:100%;height:34px;font-size:12px}
+  .navbar .btn{height:30px;padding:0 8px;font-size:11px}
+  .btn{height:32px;padding:6px 12px;font-size:12px}
+  .btn-start{height:32px;padding:6px 12px;font-size:12px}
+  .btn-profile{height:32px;padding:6px 12px;font-size:12px}
   .wrap{margin:12px auto;padding:0 12px}
-  .top h1{font-size:22px}
+  .top h1{font-size:18px}
   .card{border-radius:8px}
-  .card > *{padding:10px}
-  .listingstatus > div{display:grid;grid-template-columns:repeat(2,1fr)!important;gap:8px!important}
+  .card > *{padding:10px;font-size:12px}
+  .listingstatus > div{display:grid;grid-template-columns:repeat(4,1fr)!important;gap:4px!important}
+  .listingstatus > div .card{padding:6px!important}
+  .listingstatus > div .card div:first-child{font-size:9px!important}
+  .listingstatus > div .card div:last-child{font-size:14px!important}
   .mapbox{height:260px}
   iframe{height:60vh !important}
+  .nav-right .btn[href*="logout"]{display:none}
 }
 
 @media (max-width: 400px){
-  .listingstatus > div{grid-template-columns:1fr!important}
+  html,body{font-size:11px}
+  .navbar{padding:6px 8px}
+  .navbar .brand{font-size:12px}
+  .navbar .search input{font-size:11px}
+  .navbar .btn{font-size:10px}
+  .wrap{margin:8px auto;padding:0 8px}
+  .top h1{font-size:16px}
+  .card > *{padding:8px;font-size:11px}
+  .listingstatus > div{grid-template-columns:repeat(4,1fr)!important;gap:2px!important}
+  .listingstatus > div .card{padding:4px!important}
+  .listingstatus > div .card div:first-child{font-size:8px!important}
+  .listingstatus > div .card div:last-child{font-size:12px!important}
   .mapbox{height:220px}
   iframe{height:56vh !important}
 }
